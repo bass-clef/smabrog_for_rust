@@ -1,46 +1,38 @@
+/*
 
-use std::time::Duration;
-use std::thread::sleep;
-use opencv::prelude::*;
+    smabrog
 
-mod scene;
-use scene::SceneManager;
+    author:Humi@bass_clef_
+    e-mail:bassclef.nico@gmail.com
 
-/* 戦歴を管理するクラス */
-struct BattleHistory {
+*/
 
-}
-impl BattleHistory {
-
-}
-
-/* スマブラを管理するクラス */
-struct SmashBrogEngine {
-    sceneManager: SceneManager,
-}
-impl SmashBrogEngine {
-    fn new() -> SmashBrogEngine {
-        SmashBrogEngine{
-            sceneManager: SceneManager::new()
-        }
-    }
-
-    fn main(&self) -> bool {
-        self.sceneManager.whichScene();
-
-        return false;
-    }
-}
+use smabrog::gui::*;
 
 /* メインループ */
-fn main() {
-    let engine = SmashBrogEngine::new();
+fn main() -> Result<(), iced_winit::Error> {
+    make_gui_run()
+}
 
-    loop {
-        if engine.main() {
-            break;
-        }
+fn make_gui_run() -> Result<(), iced_winit::Error> {
+    // ウィンドウの作成,GUI変数の定義,レンダリングの設定と iced への処理の移譲
+    let window = iced_winit::settings::Window {
+        size: (256, 720),
+        min_size: Some((256, 256)), max_size: Some((256, 720)),
+        ..iced_winit::settings::Window::default()
+    };
+    let settings = iced_winit::Settings::<()> {
+        window: window,
+        flags: (),
+    };
+    let renderer_settings = iced_wgpu::Settings {
+        antialiasing: Some(iced_wgpu::settings::Antialiasing::MSAAx4),
+        default_text_size: 16,
+        ..iced_wgpu::Settings::default()
+    };
 
-        sleep(Duration::from_millis(1));
-    }
+    iced_winit::application::run::<GUI, iced::executor::Default, iced_wgpu::window::Compositor>(
+        settings.into(),
+        renderer_settings,
+    )
 }
