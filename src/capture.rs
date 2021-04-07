@@ -22,6 +22,7 @@ fn to_wchar(value: &str) -> *mut winapi::ctypes::wchar_t {
     vec16.as_mut_ptr()
 }
 
+
 /* 画面をキャプチャするクラス () */
 pub trait Capture {
     /// Mat を返す
@@ -42,7 +43,7 @@ impl Default for CaptureNone {
 
 // ビデオキャプチャ から Mat
 pub struct CaptureFromVideoDevice {
-    video_capture: Box<dyn videoio::VideoCaptureTrait>,
+    pub video_capture: Box<dyn videoio::VideoCaptureTrait>,
     pub prev_image: core::Mat,
 }
 impl Capture for CaptureFromVideoDevice {
@@ -56,38 +57,19 @@ impl Capture for CaptureFromVideoDevice {
 }
 impl Default for CaptureFromVideoDevice {
     fn default() -> Self {
-        let mut own = CaptureFromVideoDevice::new(3);
-        own.video_capture.set(opencv::videoio::CAP_PROP_FRAME_WIDTH, 640f64).unwrap();
-        own.video_capture.set(opencv::videoio::CAP_PROP_FRAME_HEIGHT, 360f64).unwrap();
-        own.video_capture.set(opencv::videoio::CAP_PROP_FPS, 30f64).unwrap();
-        
-        own
+        CaptureFromVideoDevice::new(0)
     }
 }
 impl CaptureFromVideoDevice {
     pub fn new(index: i32) -> Self {
-        let mut active_device = vec![];
-        let mut temp_video_capture: Box<dyn videoio::VideoCaptureTrait>;
-        for i in 1..20 {
-            match videoio::VideoCapture::new(i, videoio::CAP_ANY) {
-                Ok(v) => {
-                    // Rust ダウンキャストめんどくさくね？？？
-                    temp_video_capture = Box::new(v);
-                    if temp_video_capture.is_opened().unwrap() {
-                        active_device.push(i);
-                        println!("devs {}", i);
-                    }
-                    temp_video_capture.release().unwrap();
-                },
-                Err(_) => (),
-            };
-
-        }
-
-        Self {
+        let mut own = Self {
             video_capture: Box::new(videoio::VideoCapture::new(index, videoio::CAP_DSHOW).unwrap()),
             prev_image: core::Mat::default().unwrap(),
-        }
+        };
+        own.video_capture.set(opencv::videoio::CAP_PROP_FRAME_WIDTH, 640f64).unwrap();
+        own.video_capture.set(opencv::videoio::CAP_PROP_FRAME_HEIGHT, 360f64).unwrap();
+
+        own
     }
 }
 
@@ -102,8 +84,7 @@ pub struct CaptureFromWindow {
 }
 impl Capture for CaptureFromWindow {
     fn get_mat(&mut self) -> opencv::Result<core::Mat> {
-        self.update_dc_to_mat()?;
-
+        self.update_dc_to_mat();
         Ok(self.prev_image.try_clone()?)
     }
 }
@@ -114,14 +95,14 @@ impl Default for CaptureFromWindow {
 }
 impl CaptureFromWindow {
     // ウィンドウに張り付いてる BMP を取得して Mat に変換する
-    fn update_dc_to_mat(&mut self) -> opencv::Result<()> {
+    fn update_dc_to_mat(&mut self) {
         use winapi::shared::minwindef::LPVOID;
         use winapi::shared::windef::HBITMAP;
         use winapi::um::wingdi::*;
         use winapi::um::winnt::HANDLE;
 
         if self.win_handle.is_null() {
-            return Ok(());
+            return;
         }
 
         unsafe {
@@ -131,8 +112,8 @@ impl CaptureFromWindow {
             let mut bitmap: BITMAP = std::mem::zeroed();
             GetObjectW(bitmap_handle as HANDLE, std::mem::size_of::<BITMAP>() as i32, &mut bitmap as PBITMAP as LPVOID);
 
-            let color_number = bitmap.bmBitsPixel as i32 / 8;
-            let size = (bitmap.bmWidth * bitmap.bmHeight * color_number) as usize;
+            let channels = bitmap.bmBitsPixel as i32 / 8;
+            let size = (bitmap.bmWidth * bitmap.bmHeight * channels) as usize;
     
             // TODO:Rust で LPVOID なメモリを確保する方法がわからない件について
             let mut buffer = Vec::<u8>::with_capacity(size);
@@ -143,22 +124,20 @@ impl CaptureFromWindow {
 
             // オーバーヘッドやばいけど作成し直したほうが確実だった
             let temp_mat = core::Mat::new_rows_cols_with_data(
-                bitmap.bmHeight, bitmap.bmWidth, core::CV_MAKETYPE(core::CV_8U, color_number),
+                bitmap.bmHeight, bitmap.bmWidth, core::CV_MAKETYPE(core::CV_8U, channels),
                 bitmap.bmBits, core::Mat_AUTO_STEP
-            )?;
+            ).unwrap();
 
             // メモリ解放する前に clone する。
             // 上記関数はコピーでなくてメモリ自体を持ってるだけらしいので
             // 今後の mat アクセス系関数でメモリ系の例外ぶんなげられて、原因がわけわからなくなるのを防ぐ
-            self.prev_image.release()?;
+            self.prev_image.release().unwrap();
             self.prev_image = temp_mat.clone();
 
             // メモリ開放
             let s = std::slice::from_raw_parts_mut(bitmap.bmBits, size);
             let _ = Box::from_raw(s);
         }
-
-        Ok(())
     }
 
     pub fn new(win_caption: &str, win_class: &str) -> Self {

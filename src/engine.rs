@@ -5,12 +5,12 @@ use crate::scene::*;
 /* スマブラを管理するクラス */
 #[derive(Default)]
 pub struct SmashBrogEngine {
-    sceneManager: SceneManager,
+    scene_manager: SceneManager,
 
 }
 impl SmashBrogEngine {
     pub fn update(&mut self) -> opencv::Result<()> {
-        self.sceneManager.update()?;
+        self.scene_manager.update()?;
 
         Ok(())
     }

@@ -6,35 +6,75 @@ use std::time::{Duration, Instant};
 
 use crate::engine::*;
 
-/* GUIを管理するクラス */
-#[derive(Default)]
-pub struct GUI {
-    button: iced_winit::button::State,
-    count: i32,
-    engine: SmashBrogEngine,
-}
+
 #[derive(Debug, Clone, Copy)]
 pub enum Message {
     Tick(Instant),
     None,
     ButtonPressed,
 }
+
+/* GUIを管理するクラス */
+pub struct GUI {
+    button: iced_winit::button::State,
+    count: i32,
+    engine: SmashBrogEngine,
+}
+impl Default for GUI {
+    fn default() -> Self {
+        unsafe { CAPTION.set(String::from("")).unwrap() };
+
+        Self {
+            button: Default::default(),
+            count: 0,
+            engine: Default::default(),
+        }
+    }
+}
+use once_cell::sync::OnceCell;
+static mut CAPTION: OnceCell<String> = OnceCell::new();
+impl GUI {
+    // 他モジュールから動的にキャプションを変更するためのもの
+    pub fn get_title() -> &'static str {
+        unsafe {
+            match CAPTION.get() {
+                Some(string) => {
+                    &string
+                },
+                None => "",
+            }
+        }
+    }
+
+    pub fn set_title(new_caption: &str) {
+        unsafe {
+            let caption = CAPTION.get_mut();
+            match caption {
+                Some(string) => {
+                    string.clear();
+                    string.push_str(new_caption);
+                },
+                None => (),
+            };
+        }
+    }
+}
 // 実態(作成前?)
 impl iced_winit::application::Application for GUI {
     type Flags = ();
 
-    fn new(flags: Self::Flags) -> (Self, Command<Self::Message>) {
+    fn new(_: Self::Flags) -> (Self, Command<Self::Message>) {
         (
             Default::default(),
             Command::none()
         )
     }
-    fn title(&self) -> String { format!("{}. [{}]", GUI::get_title(), self.count) }
+    fn title(&self) -> String { format!("{}|{}", Self::get_title(), self.count) }
 
     // ここで iced と winit の Event を相互変換したり、独自の Event を発行する
     fn subscription(&self) -> iced_winit::subscription::Subscription<Message> {
         // どうやら iced_winit のイベントを独自イベントに書き換えてるらしい
-        let event = iced_winit::subscription::events_with(|event, status| {
+        iced_winit::subscription::events_with(|event, status| {
             if let iced_winit::event::Status::Captured = status {
                 return None;
             }
@@ -50,8 +90,8 @@ impl iced_winit::application::Application for GUI {
             }
         });
 
-        // iced でタイマー処理するには async-std で非同期にイベントを発行しなければいけないらしい
-        time::every(Duration::from_millis(1000 / 60))
+        // iced でタイマー処理するには、非同期にイベントを発行しなければいけないらしい
+        time::every(Duration::from_millis(1000/30))
             .map(|instant| Message::Tick(instant))
     }
 }
@@ -100,22 +140,6 @@ impl iced_winit::Program for GUI {
                     .on_press(Message::ButtonPressed),
             )
             .into()
-    }
-}
-use once_cell::sync::OnceCell;
-static INSTANCE: OnceCell<String> = OnceCell::new();
-impl GUI {
-    pub fn get_title() -> &'static str {
-        match INSTANCE.get() {
-            Some(v) => &v,
-            None => "",
-        }
-    }
-    pub fn set_title(new_title: &str) {
-        match INSTANCE.set(new_title.to_string()) {
-            Ok(_) => (),
-            _ => (),
-        }
     }
 }
 
