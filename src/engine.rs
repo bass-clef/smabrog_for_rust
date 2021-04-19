@@ -2,7 +2,7 @@
 use crate::scene::*;
 
 
-/* スマブラを管理するクラス */
+/// スマブラを管理するクラス
 #[derive(Default)]
 pub struct SmashBrogEngine {
     scene_manager: SceneManager,

@@ -91,7 +91,7 @@ impl iced_winit::application::Application for GUI {
         });
 
         // iced でタイマー処理するには、非同期にイベントを発行しなければいけないらしい
-        time::every(Duration::from_millis(1000/30))
+        time::every(Duration::from_millis(1000/15))
             .map(|instant| Message::Tick(instant))
     }
 }

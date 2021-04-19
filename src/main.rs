@@ -7,6 +7,12 @@
 
 */
 
+use opencv::{
+    core,
+    imgcodecs,
+    prelude::*,
+};
+
 use smabrog::gui::*;
 
 /* メインループ */
