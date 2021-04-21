@@ -342,8 +342,6 @@ impl CaptureFromDesktop {
         // デスクトップ画面から ReadyToFight を検出して位置を特定する
         println!("finding capture area from desktop...");
         let desktop_handle = 0 as winapi::shared::windef::HWND;
-        let mut ready_to_fight_scene = ReadyToFightScene::new_trans();
-        let mut content_area = core::Rect { x: 0, y: 0, width: 0, height: 0 };
 
         // モニターの左上の座標を取得
         let mut monitor_lefttop = core::Point { x:0, y:0 };
@@ -354,6 +352,8 @@ impl CaptureFromDesktop {
 
         // 解像度の特定, よく使われる解像度を先に指定する (640x360 未満は扱わない, FHDまで)
         let mut capture_dc = CaptureDC::default();
+        let mut ready_to_fight_scene = ReadyToFightScene::new_trans();
+        let mut content_area = core::Rect { x: 0, y: 0, width: 0, height: 0 };
         let mut find_resolution: i32 = 40;
         let base_resolution = core::Size { width: 16, height: 9 };
         let mut resolution_list = vec![40, 53, 80, 96, 100, 120];
@@ -363,7 +363,6 @@ impl CaptureFromDesktop {
         resolution_list.extend( (97..100).collect::<Vec<i32>>() );
         resolution_list.extend( (101..120).collect::<Vec<i32>>() );
         for resolution in resolution_list {
-            println!("\r{}...", resolution);
             let mut mat = match capture_dc.get_mat(desktop_handle, None, Some(monitor_lefttop)) {
                 Ok(v) => v,
                 Err(_) => continue,

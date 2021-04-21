@@ -5,10 +5,11 @@ use opencv::{
     imgproc,
     prelude::*
 };
+use tesseract::Tesseract;
+
 
 use crate::capture::*;
 use crate::gui::GUI;
-
 
 macro_rules! measure {
     ( $x:expr) => {{
@@ -20,23 +21,12 @@ macro_rules! measure {
     }};
 }
 
-async fn run_ocr(image: &core::Mat) -> opencv::Result<String> {
-    let size = image.channels()? * image.cols() * image.rows();
-    let data: &[u8] = unsafe{ std::slice::from_raw_parts(image.datastart(), size as usize) };
-
-    let text = tesseract::ocr_from_frame(data, image.cols(), image.rows(),
-        image.channels()?, image.channels()? * image.cols(), "jpn").unwrap_or("".to_string());
-    
-    Ok(text)
-}
-
 #[derive(Copy, Clone)]
 pub enum ColorFormat {
     NONE = 0, GRAY = 1,
     RGB = 3, RGBA = 4,
 }
 
-use once_cell::sync::OnceCell;
 pub struct Utils {}
 impl Utils {
     // if-else も match もさけようね～というやつ
@@ -93,7 +83,7 @@ impl Utils {
     -> opencv::Result<core::Mat>
     {
         let mut contours = opencv::types::VectorOfVectorOfPoint::new();
-        let (width, height) = (src.mat_size().get(1)?, src.mat_size().get(0)?);
+        let (width, height) = (src.cols(), src.rows());
         let mut any_rect = core::Rect::new(width, height, 0, 0);
         imgproc::find_contours(gray_src, &mut contours, imgproc::RETR_EXTERNAL, imgproc::CHAIN_APPROX_SIMPLE, core::Point{x:0,y:0})?;
 
@@ -120,20 +110,38 @@ impl Utils {
             let rect = imgproc::bounding_rect(&area_contours)?;
             any_rect.x = std::cmp::min(any_rect.x, rect.x);
             any_rect.y = std::cmp::min(any_rect.y, rect.y);
-            any_rect.width = std::cmp::min(any_rect.x, rect.x + rect.width);
-            any_rect.height = std::cmp::min(any_rect.y, rect.y + rect.height);
+            any_rect.width = std::cmp::max(any_rect.x, rect.x + rect.width);
+            any_rect.height = std::cmp::max(any_rect.y, rect.y + rect.height);
         }
 
-        let trimming_rect = core::Rect {
+        let mut trimming_rect = core::Rect {
             x: std::cmp::max(any_rect.x - margin.unwrap_or(0), 0),
             y: std::cmp::max(any_rect.y - margin.unwrap_or(0), 0),
             width: std::cmp::min(any_rect.width + margin.unwrap_or(0), width),
             height: std::cmp::min(any_rect.height + margin.unwrap_or(0), height)};
+        trimming_rect.width -= trimming_rect.x + 1;
+        trimming_rect.height -= trimming_rect.y + 1;
         match core::Mat::roi(&src, trimming_rect) {
             Ok(result_image) => Ok(result_image),
             // size が 0 近似で作成できないときが予想されるので、src を返す
             Err(_) => Ok(src.clone()),
         }
+    }
+
+    /// ocr を Mat で叩く。
+    /// tesseract::ocr_from_frame だと「Warning: Invalid resolution 0 dpi. Using 70 instead.」がうるさかったので作成
+    pub async fn run_ocr(image: &core::Mat) -> Result<String, tesseract::TesseractError> {
+        let size = image.channels().unwrap() * image.cols() * image.rows();
+        let data: &[u8] = unsafe{ std::slice::from_raw_parts(image.datastart(), size as usize) };
+        
+        Ok(
+            Tesseract::new(None, Some("eng"))?
+                .set_frame(data, image.cols(), image.rows(),
+                    image.channels().unwrap(), image.channels().unwrap() * image.cols())?
+                .set_source_resolution(70)
+                .recognize()?
+                .get_text().unwrap_or("".to_string())
+        )
     }
 }
 
@@ -503,11 +511,11 @@ struct MatchingScene {
 impl Default for MatchingScene {
     fn default() -> Self {
         Self {
-            scene_judgment: SceneJudgment::new_trans(
+            scene_judgment: SceneJudgment::new(
                 imgcodecs::imread("resource/ready_ok_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
                 Some(imgcodecs::imread("resource/ready_ok_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
             ).unwrap()
-            .set_border(0.96)
+            .set_border(0.98)
         }
     }
 }
@@ -596,8 +604,12 @@ impl SceneTrait for HamVsSpamScene {
     fn detect_data(&mut self, smashbros_data: &mut SmashbrosData) -> opencv::Result<()> {
         if self.buffer.is_recoding_end() {
             smashbros_data.character_name_list.clear();
+            for player_count in 0..smashbros_data.player_count {
+                smashbros_data.character_name_list.push("".to_string());
+            }
         }
 
+        use regex::Regex;
         self.buffer.replay_frame(|frame| {
             let mut gray_capture_image = core::Mat::default();
             Utils::cvt_color_to(&frame, &mut gray_capture_image, ColorFormat::GRAY as i32)?;
@@ -609,29 +621,34 @@ impl SceneTrait for HamVsSpamScene {
             core::bitwise_not(&work_capture_image, &mut temp_capture_image, &core::no_array()?)?;
     
             // プレイヤー毎の位置で処理する
-            let (width, height) = (frame.mat_size().get(1)?, frame.mat_size().get(0)?);
+            let (width, height) = (frame.cols(), frame.rows());
             let player_area_width = width / smashbros_data.player_count;
             let mut chara_name_list: Vec<String> = Default::default();
+            let re = Regex::new(r"\s*(\w+)\s*").unwrap();
             for player_count in 0..smashbros_data.player_count {
-                let mut name_area_image = temp_capture_image.adjust_roi(
-                    0, height/7,    // 高さそんなにいらないので適当に小さくする
-                    player_area_width*player_count, player_area_width*player_count + player_area_width
-                )?;
-                let mut gray_name_area_image = work_capture_image.adjust_roi(
-                    0, height/7,    // 高さそんなにいらないので適当に小さくする
-                    player_area_width*player_count, player_area_width*player_count + player_area_width
-                )?;
+                if !smashbros_data.character_name_list[player_count as usize].is_empty() {
+                    // 既にプレイヤーキャラクターが確定しているならスキップ
+                    continue;
+                }
+                // 高さそんなにいらないので適当に小さくする
+                let mut player_name_area = core::Rect {
+                    x: player_area_width*player_count +30, y: 0,        // 30:{N}P のプレイヤー表示の幅
+                    width: player_area_width -10 -30, height: height/7  // 10:稲妻が処理後に黒四角形になって文字領域として誤認されるのを防ぐため
+                };
+                let mut name_area_image = core::Mat::roi(&temp_capture_image, player_name_area)?;
+                let mut gray_name_area_image = core::Mat::roi(&work_capture_image, player_name_area)?;
     
                 // 輪郭捕捉して
                 let name_contour_image = Utils::trimming_any_rect(
                     &mut name_area_image, &gray_name_area_image, Some(5), None, None, false, None)?;
-                Utils::cvt_color_to(&name_contour_image, &mut temp_capture_image, ColorFormat::RGB as i32)?;
-                opencv::highgui::imshow(&format!("name_contour_image{}", player_count), &name_contour_image)?;
+                Utils::cvt_color_to(&name_contour_image, &mut name_area_image, ColorFormat::RGB as i32)?;
+                opencv::highgui::imshow(&format!("name{}", player_count), &name_area_image)?;
                 
-                // tesseract でキャラ名取得
-                let chara_name: String = async_std::task::block_on(run_ocr(&temp_capture_image)).unwrap();
-                
-                chara_name_list.push(chara_name);
+                // tesseract でキャラ名取得して, 余計な文字を排除
+                let text = &async_std::task::block_on(Utils::run_ocr(&name_area_image)).unwrap();
+                if let Some(caps) = re.captures( text ) {
+                    chara_name_list.push( String::from(&caps[1]) );
+                }
             }
     
             println!("captured name list: {:?}", chara_name_list);
@@ -646,6 +663,8 @@ impl SceneTrait for HamVsSpamScene {
     }
 
     fn draw(&self, _capture: &mut core::Mat) {}
+}
+impl HamVsSpamScene {
 }
 
 /// 試合開始の検出
