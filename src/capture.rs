@@ -14,7 +14,6 @@ use winapi::um::wingdi::*;
 use winapi::um::winnt::HANDLE;
 use winapi::um::winuser::*;
 
-use crate::gui::GUI;
 use crate::scene::{ReadyToFightScene, SceneTrait};
 
 
@@ -177,7 +176,7 @@ impl CaptureDC {
             GetObjectW(bitmap_handle as HANDLE, std::mem::size_of::<BITMAP>() as i32, &mut bitmap as PBITMAP as LPVOID);
 
             // オーバーヘッドやばいけど毎回作成する
-            let mut temp_mat = core::Mat::new_rows_cols_with_data(
+            let temp_mat = core::Mat::new_rows_cols_with_data(
                 self.height, self.width, core::CV_MAKETYPE(core::CV_8U, channels),
                 bitmap.bmBits as LPVOID, core::Mat_AUTO_STEP
             )?;
@@ -322,7 +321,6 @@ impl Default for CaptureFromDesktop {
 impl CaptureTrait for CaptureFromDesktop {
     fn get_mat(&mut self) -> opencv::Result<core::Mat> {
         if let Ok(mat) = self.capture_dc.get_mat(self.win_handle, Some(self.content_area), Some(self.monitor_lefttop)) {
-            let base_resolution = core::Size { width: 16, height: 9 };
             let resize = core::Size {
                 width: (40.0 / self.resolution as f32 * mat.cols() as f32) as i32,
                 height: (40.0 / self.resolution as f32 * mat.rows() as f32) as i32
@@ -378,8 +376,8 @@ impl CaptureFromDesktop {
             };
             imgproc::resize(&mat, &mut resized_mat, resize, 0.0, 0.0, imgproc::INTER_LINEAR).unwrap();
 
-            ready_to_fight_scene.is_scene(&resized_mat).unwrap();
-            let mut scene_judgment;
+            ready_to_fight_scene.is_scene(&resized_mat, None).unwrap();
+            let scene_judgment;
             if ready_to_fight_scene.red_scene_judgment.prev_match_ratio < ready_to_fight_scene.grad_scene_judgment.prev_match_ratio {
                 scene_judgment = &ready_to_fight_scene.grad_scene_judgment;
             } else {
@@ -411,13 +409,97 @@ impl CaptureFromDesktop {
 }
 
 
-
-use std::time::{Duration, Instant};
-pub struct CaptureFrameStore {
+/// コーデックを保持するクラス
+struct Codec {
     backend: i32,
     fourcc: i32,
-    file_name: String,
+    file_name: Option<String>,
+}
+impl AsRef<Codec> for Codec {
+    fn as_ref(&self) -> &Codec { self }
+}
+impl Codec {
+    /// インストールされているコーデックを照合して初期化
+    pub fn find_codec() -> Self {
+        println!("find installed codec... {:?}", videoio::get_writer_backends());
+        let fourcc_list = [b"HEVC", b"H265", b"X264", b"FMP4", b"ESDS", b"MP4V", b"MJPG"];
+        let extension_list = ["mp4", "avi"];
+        let mut writer: videoio::VideoWriter = videoio::VideoWriter::default().unwrap();
+        let mut codec = Self {
+            backend: videoio::CAP_ANY,
+            fourcc: -1,
+            file_name: None
+        };
+        let mut file_name = String::from("");
+        // 環境によってインストールされている バックエンド/コーデック/対応する拡張子 が違うので特定
+        'find_backends: for backend in videoio::get_writer_backends().unwrap() {
+            if videoio::CAP_IMAGES == backend as i32 {
+                // CAP_IMAGES だけ opencv のほうでエラーが出るので除外
+                // (Rust 側の Error文でないので抑制できないし、消せないし邪魔)
+                // error: (-5:Bad argument) CAP_IMAGES: can't find starting number (in the name of file): temp.avi in function 'cv::icvExtractPattern'
+                continue;
+            }
 
+            for fourcc in fourcc_list.to_vec() {
+                for extension in extension_list.to_vec() {
+                    codec.backend = backend as i32;
+                    codec.fourcc = i32::from_ne_bytes(*fourcc);
+                    file_name = format!("temp.{}", extension);
+    
+                    let ret = writer.open_with_backend(
+                        &file_name, codec.backend, codec.fourcc,
+                        15.0, core::Size{width: 640, height: 360}, true
+                    ).unwrap_or(false);
+                    if ret {
+                        println!("codec initialized: {:?} ({:?}) to {:?}", backend, std::str::from_utf8(fourcc).unwrap(), &file_name);
+                        break 'find_backends;
+                    }
+
+                    codec.backend = videoio::CAP_ANY;
+                    codec.fourcc = -1;
+                    file_name = "temp.avi".to_string();
+                }
+            }
+        }
+        writer.release().ok();
+
+        codec.file_name = Some(file_name);
+        codec
+    }
+
+    /// コーデック情報に基づいて VideoWriter を初期化する
+    pub fn open_writer_with_codec(&self, writer: &mut videoio::VideoWriter) -> opencv::Result<bool> {
+        writer.open_with_backend(
+            &self.file_name.clone().unwrap(), self.backend, self.fourcc,
+            15.0, core::Size{width: 640, height: 360}, true
+        )
+    }
+
+    /// コーデック情報に基づいて VideoWriter を初期化する
+    pub fn open_reader_with_codec(&self, reader: &mut videoio::VideoCapture) -> opencv::Result<bool> {
+        reader.open_file(&self.file_name.clone().unwrap(), self.backend)
+    }
+}
+/// シングルトンでコーデックを保持するため
+struct WrappedCodec {
+    codecs: Option<Codec>,
+}
+impl WrappedCodec {
+    // 参照して返さないと、unwrap() で move 違反がおきてちぬ！
+    fn get(&mut self) -> &Codec {
+        if self.codecs.is_none() {
+            self.codecs = Some(Codec::find_codec());
+        }
+        self.codecs.as_ref().unwrap()
+    }
+}
+static mut CODECS: WrappedCodec = WrappedCodec {
+    codecs: None
+};
+
+/// キャプチャ用のバッファ(動画ファイル[temp.*])を管理するクラス
+use std::time::{Duration, Instant};
+pub struct CaptureFrameStore {
 	writer: videoio::VideoWriter,
     reader: videoio::VideoCapture,
 
@@ -432,10 +514,6 @@ pub struct CaptureFrameStore {
 impl Default for CaptureFrameStore {
     fn default() -> Self {
         Self {
-            file_name: "temp.avi".to_string(),
-            backend: videoio::CAP_ANY,
-            fourcc: -1,
-
             writer: videoio::VideoWriter::default().unwrap(),
             reader: videoio::VideoCapture::default().unwrap(),
 
@@ -455,62 +533,55 @@ impl CaptureFrameStore {
         self.recoding_start_time = None;
         self.recoding_end_time = None;
         self.recoding_need_frame = None;
-        
-        // 環境によってインストールされている バックエンド/コーデック が違うので特定
-        println!("find installed codec... {:?}", videoio::get_writer_backends());
-        let fourcc_list = [b"HEVC", b"H265", b"X264", b"FMP4", b"ESDS", b"MP4V", b"MJPG"];
-        let extension_list = ["mp4", "avi"];
-        'find_backends: for backend in videoio::get_writer_backends()? {
-            if videoio::CAP_IMAGES == backend as i32 {
-                // CAP_IMAGES だけ opencv のほうでエラーが出るので除外
-                // (Rust 側の Error文でないので抑制できないし、消せないし邪魔)
-                continue;
-            }
+        self.recoded_frame = 0;
+        self.filled_by_frame = false;
 
-            for fourcc in fourcc_list.to_vec() {
-                for extension in extension_list.to_vec() {
-                    self.backend = backend as i32;
-                    self.fourcc = i32::from_ne_bytes(*fourcc);
-                    self.file_name = format!("temp.{}", extension);
-    
-                    let ret = match self.writer.open_with_backend(
-                        &self.file_name, self.backend, self.fourcc,
-                        15.0, core::Size{width: 640, height: 360}, true
-                    ) {
-                        Ok(v) => v,
-                        Err(_) => false,
-                    };
-                    if ret {
-                        println!("video writer initialize: {:?} ({:?}) to {:?}", backend, std::str::from_utf8(fourcc).unwrap(), self.file_name);
-                        break 'find_backends;
-                    }
-
-                    self.backend = videoio::CAP_ANY;
-                    self.fourcc = -1;
-                    self.file_name = "temp.avi".to_string();
-                }
-            }
+        if self.reader.is_opened()? {
+            // 開放しないと reader と writer で同じコーデックを使おうとする時に初期化できなくて怒られる
+            self.reader.release()?;
         }
+
+        if !unsafe{ CODECS.get() }.open_writer_with_codec(&mut self.writer).unwrap_or(false) {
+            return Err(opencv::Error::new( 0, "not found Codec for [*.mp4 or *.avi]. maybe: you install any Codec for your PC".to_string() ));
+        }
+
+        Ok(())
+    }
+
+    // 録画再生時前にする処理 (録画終了時に呼ばれる)
+    fn replay_initialize(&mut self) -> opencv::Result<()> {
+        if self.reader.is_opened()? {
+            return Ok(());
+        }
+
+        if self.writer.is_opened()? {
+            // 開放しないと reader と writer で同じコーデックを使おうとする時に初期化できなくて怒られる
+            self.writer.release()?;
+        }
+
+        if !unsafe{ CODECS.get() }.open_reader_with_codec(&mut self.reader).unwrap_or(false) {
+            return Err(opencv::Error::new( 0, "not initialized video reader. maybe: playing temp video?".to_string() ));
+        }
+
+        self.filled_by_frame = true;
 
         Ok(())
     }
 
     // 録画再生終了時にする処理
     fn replay_finalize(&mut self) -> opencv::Result<()> {
-        if !self.is_filled() {
+        if !self.reader.is_opened()? {
             return Ok(());
         }
 
-        self.filled_by_frame = false;
-
-        // reader を空にして 満たされていないことにする
         self.reader.release()?;
+        self.filled_by_frame = false;
 
         Ok(())
     }
 
-    // 録画が開始してるか
-    fn is_recoding_started(&self) -> bool {
+    /// 録画が開始してるか
+    pub fn is_recoding_started(&self) -> bool {
         if !self.writer.is_opened().unwrap() {
             return false;
         }
@@ -528,6 +599,10 @@ impl CaptureFrameStore {
 
     /// 録画が終わってるか
     pub fn is_recoding_end(&self) -> bool {
+        if !self.is_recoding_started() {
+            return false;
+        }
+
         if let Some(recoding_end_time) = self.recoding_end_time {
             return recoding_end_time <= Instant::now();
         }
@@ -573,12 +648,6 @@ impl CaptureFrameStore {
     pub fn recoding_frame(&mut self, capture_image: &core::Mat) -> opencv::Result<()> {
         if self.is_filled() {
             // フレームで満たされると reader を開いて replay_frame で空になるまで放置
-            if self.reader.is_opened()? {
-                return Ok(());
-            }
-            self.writer.release()?;
-            let ret = self.reader.open_file(&self.file_name, self.backend)?;
-            println!("video reader initialize: {}", ret);
             return Ok(());
         }
         if !self.is_recoding_started() {
@@ -589,7 +658,7 @@ impl CaptureFrameStore {
         self.recoded_frame += 1;
 
         if self.is_recoding_end() {
-            self.filled_by_frame = true;
+            self.replay_initialize()?;
         }
         Ok(())
     }
