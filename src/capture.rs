@@ -615,8 +615,8 @@ impl CaptureFrameStore {
     }
 
     /// リプレイが終わってるか
-    // self.recoded_frame が 0 に減算されきっていて、まだ recoding_hoge が初期化されていないと true
     pub fn is_replay_end(&self) -> bool {
+        // self.recoded_frame が 0 に減算されきっていて、まだ recoding_hoge が初期化されていないと true
         if 0 < self.recoded_frame {
             return false;
         }
@@ -631,6 +631,10 @@ impl CaptureFrameStore {
 
     /// now から end_time_duration 秒後まで録画しつづける
     pub fn start_recoding_by_time(&mut self, end_time_duration: Duration) {
+        if self.is_recoding_started() {
+            return;
+        }
+
         self.recoding_initialize().unwrap();
         self.recoding_start_time = Some(Instant::now());
         self.recoding_end_time = Some(self.recoding_start_time.unwrap() + end_time_duration);
@@ -638,6 +642,10 @@ impl CaptureFrameStore {
 
     /// 必要なフレームがたまるまで録画しつづける
     pub fn start_recoding_by_frame(&mut self, need_frame: i32) {
+        if self.is_recoding_started() {
+            return;
+        }
+
         self.recoding_initialize().unwrap();
         self.recoding_need_frame = Some(need_frame);
         self.recoded_frame = 0;
