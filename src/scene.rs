@@ -473,8 +473,8 @@ impl SceneTrait for ReadyToFightScene {
     }
     
     fn is_scene(&mut self, capture_image: &core::Mat, smashbros_data: Option<&mut SmashbrosData>) -> opencv::Result<bool> {
-        if let Some(smashbros_data) = smashbros_data {
-            if smashbros_data.is_playing_battle() {
+        if let Some(data) = smashbros_data.as_ref() {
+            if data.is_playing_battle() {
                 // 試合中の検出は数回に一回で十分
                 if 0 < self.scene_judgment_skip_wait {
                     self.scene_judgment_skip_wait -= 1;
@@ -498,6 +498,13 @@ impl SceneTrait for ReadyToFightScene {
             self.red_scene_judgment.match_captured_scene(&capture_image).await;
         });
 
+        if self.grad_scene_judgment.is_near_match() || self.red_scene_judgment.is_near_match() {
+            if let Some(data) = smashbros_data {
+                data.finalize_battle();
+            }
+        }
+
+
         Ok( self.grad_scene_judgment.is_near_match() || self.red_scene_judgment.is_near_match() )
     }
 
@@ -505,7 +512,7 @@ impl SceneTrait for ReadyToFightScene {
 
     fn recoding_scene(&mut self, _capture: &core::Mat) -> opencv::Result<()> { Ok(()) }
     fn is_recoded(&self) -> bool { false }
-    fn detect_data(&mut self, smashbros_data: &mut SmashbrosData) -> opencv::Result<()> { Ok(()) }
+    fn detect_data(&mut self, _smashbros_data: &mut SmashbrosData) -> opencv::Result<()> { Ok(()) }
     fn draw(&self, _capture: &mut core::Mat) {}
 }
 impl ReadyToFightScene {
@@ -740,14 +747,17 @@ impl SceneTrait for GameStartScene {
     // ラグとかある状況も予想されるので、00.00 が検出できたら"GO"とでていなくとも次に遷移する
     // 右上の 00.00 が表示されている場所に ある程度の確率で検出してればよしとする
     // (背景がステージによって全然違うのでマスク処理するのが難しい)
-    fn is_scene(&mut self, capture_image: &core::Mat, _smashbros_data: Option<&mut SmashbrosData>) -> opencv::Result<bool> {
+    fn is_scene(&mut self, capture_image: &core::Mat, smashbros_data: Option<&mut SmashbrosData>) -> opencv::Result<bool> {
         async_std::task::block_on(async {
             self.scene_judgment.match_captured_scene(&capture_image).await;
         });
 
         if 0.85 < self.scene_judgment.prev_match_ratio &&
             568 == self.scene_judgment.prev_match_point.x && 13 == self.scene_judgment.prev_match_point.y {
-            return Ok(true);
+                if let Some(smashbros_data) = smashbros_data {
+                    smashbros_data.start_battle();
+                }
+                return Ok(true);
         }
 
         Ok(false)
@@ -828,7 +838,7 @@ impl SceneTrait for GamePlayingScene {
 impl GamePlayingScene {
     // 1 on 1
     fn game_playing_with_2(&mut self, capture_image: &core::Mat, smashbros_data: &mut SmashbrosData) -> opencv::Result<bool> {
-        self.stock_scene_judgment(capture_image, smashbros_data);
+        self.stock_scene_judgment(capture_image, smashbros_data)?;
         Ok(false)
     }
     // smash
@@ -938,7 +948,7 @@ impl SceneTrait for GameEndScene {
         }
     }
 
-    fn is_scene(&mut self, capture_image: &core::Mat, _smashbros_data: Option<&mut SmashbrosData>) -> opencv::Result<bool> {
+    fn is_scene(&mut self, capture_image: &core::Mat, smashbros_data: Option<&mut SmashbrosData>) -> opencv::Result<bool> {
         // おそらく、ストック制を選択してる人のほうが多い(もしくは時間より先に決着がつくことが多い)
         async_std::task::block_on(async {
             self.game_set_scene_judgment.match_captured_scene(&capture_image).await;
@@ -949,7 +959,13 @@ impl SceneTrait for GameEndScene {
             self.time_up_scene_judgment.match_captured_scene(&capture_image).await;
         });
 
-        Ok(self.game_set_scene_judgment.is_near_match() | self.time_up_scene_judgment.is_near_match())
+        if self.game_set_scene_judgment.is_near_match() || self.time_up_scene_judgment.is_near_match() {
+            if let Some(smashbros_data) = smashbros_data {
+                smashbros_data.finish_battle();
+            }
+        }
+
+        Ok(self.game_set_scene_judgment.is_near_match() || self.time_up_scene_judgment.is_near_match())
     }
 
     fn to_scene(&self, _now_scene: SceneList) -> SceneList { SceneList::GameEnd }
@@ -1039,7 +1055,7 @@ impl ResultScene {
 
     // 1 on 1
     fn result_with_2(&mut self, capture_image: &core::Mat, smashbros_data: &mut SmashbrosData) -> opencv::Result<bool> {
-        self.result_scene_judgment(capture_image, smashbros_data);
+        self.result_scene_judgment(capture_image, smashbros_data)?;
         Ok(false)
     }
     // smash
@@ -1145,7 +1161,7 @@ impl ResultScene {
             // 輪郭捕捉して(数値の範囲)
             let power_contour_image = Utils::trimming_any_rect(
                 &mut power_contour_image, &work_capture_image, Some(1), Some(1.0), None, false, None)?;
-            Utils::cvt_color_to(&power_contour_image, &mut power_area_image, ColorFormat::RGB as i32);
+            Utils::cvt_color_to(&power_contour_image, &mut power_area_image, ColorFormat::RGB as i32)?;
 
             // tesseract で文字(数値)を取得して, 余計な文字を排除
             let text = &async_std::task::block_on(Utils::run_ocr_with_number(&power_area_image)).unwrap().to_string();

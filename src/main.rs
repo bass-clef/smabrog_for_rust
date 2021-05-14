@@ -7,17 +7,13 @@
 
 */
 
-use opencv::{
-    core,
-    imgcodecs,
-    prelude::*,
-};
-
 use smabrog::gui::*;
 
 /* メインループ */
-fn main() -> Result<(), iced_winit::Error> {
-    make_gui_run()
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    make_gui_run().unwrap();
+    Ok(())
 }
 
 fn make_gui_run() -> Result<(), iced_winit::Error> {

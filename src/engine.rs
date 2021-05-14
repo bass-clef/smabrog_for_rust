@@ -1,11 +1,15 @@
 
+use mongodb::*;
+use mongodb::options::{
+    ClientOptions, Credential, StreamAddress,
+};
+
 use crate::data::*;
 use crate::scene::*;
 
 
 /// スマブラを管理するクラス
 pub struct SmashBrogEngine {
-    battle_history: BattleHistory,
     scene_manager: SceneManager,
 }
 impl Default for SmashBrogEngine {
@@ -14,7 +18,6 @@ impl Default for SmashBrogEngine {
 impl SmashBrogEngine {
     fn new() -> Self {
         Self {
-            battle_history: BattleHistory::default(),
             scene_manager: SceneManager::default(),
         }
     }
