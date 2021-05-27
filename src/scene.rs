@@ -9,7 +9,10 @@ use tesseract::Tesseract;
 
 use crate::capture::*;
 use crate::data::*;
-use crate::gui::GUI;
+use crate::gui::{
+    GUI,
+    Message,
+};
 
 
 macro_rules! measure {
@@ -143,10 +146,11 @@ impl Utils {
         
         tess
     }
-    /// OCR(文字列を検出)
-    pub async fn run_ocr_with_text(image: &core::Mat) -> Result<String, tesseract::TesseractError> {
+    /// OCR(大文字アルファベットのみを検出)
+    pub async fn run_ocr_with_upper_alpha(image: &core::Mat) -> Result<String, tesseract::TesseractError> {
         Ok(
             Utils::ocr_with_mat(image)
+                .set_variable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZ").unwrap()
                 .recognize()?
                 .get_text().unwrap_or("".to_string())
         )
@@ -180,7 +184,7 @@ impl Default for SceneJudgment {
             mask_image: None,
             trans_mask_image: None,
             judgment_type: ColorFormat::RGB,
-            border_match_ratio: 0.99,
+            border_match_ratio: 0.98,
             prev_match_ratio: 0f64,
             prev_match_point: Default::default(),
         }
@@ -466,6 +470,14 @@ impl SceneTrait for ReadyToFightScene {
 
     // 回線切断などの原因で最初に戻ることは常にあるので gray match だし常に判定だけしておく
     fn continue_match(&self, now_scene: SceneList) -> bool {
+        if now_scene == SceneList::Unknown {
+            // 未検出だと ReadyToFight の検出率を表示
+            let prev_ratio = vec![
+                self.red_scene_judgment.prev_match_ratio, self.grad_scene_judgment.prev_match_ratio
+            ].iter().fold(0.0/0.0, |m, v| v.max(m));
+            GUI::set_title(&format!("not {}", prev_ratio ));
+        }
+
         match now_scene {
             SceneList::ReadyToFight => false,
             _ => true,
@@ -497,14 +509,7 @@ impl SceneTrait for ReadyToFightScene {
 
             self.red_scene_judgment.match_captured_scene(&capture_image).await;
         });
-
-        if self.grad_scene_judgment.is_near_match() || self.red_scene_judgment.is_near_match() {
-            if let Some(data) = smashbros_data {
-                data.finalize_battle();
-            }
-        }
-
-
+        
         Ok( self.grad_scene_judgment.is_near_match() || self.red_scene_judgment.is_near_match() )
     }
 
@@ -562,8 +567,7 @@ impl Default for MatchingScene {
             scene_judgment_with4: SceneJudgment::new(
                     imgcodecs::imread("resource/with_4_battle_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
                     Some(imgcodecs::imread("resource/with_4_battle_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
-                ).unwrap()
-                .set_border(0.98),
+                ).unwrap(),
         }
     }
 }
@@ -707,9 +711,9 @@ impl HamVsSpamScene {
             Utils::cvt_color_to(&name_contour_image, &mut name_area_image, ColorFormat::RGB as i32)?;
             
             // tesseract でキャラ名取得して, 余計な文字を排除
-            let text = &async_std::task::block_on(Utils::run_ocr_with_text(&name_area_image)).unwrap();
+            let text = &async_std::task::block_on(Utils::run_ocr_with_upper_alpha(&name_area_image)).unwrap();
             if let Some(caps) = re.captures( text ) {
-                smashbros_data.set_character_name( player_count, String::from(&caps[1]) );
+                smashbros_data.guess_character_name( player_count, String::from(&caps[1]) );
             }
         }
 
@@ -728,7 +732,6 @@ impl Default for GameStartScene {
                 imgcodecs::imread("resource/battle_time_zero_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
                 Some(imgcodecs::imread("resource/battle_time_zero_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
             ).unwrap()
-            .set_border(0.98)
         }
     }
 }
@@ -909,7 +912,7 @@ impl GamePlayingScene {
             // tesseract で文字(数値)を取得して, 余計な文字を排除
             let text = &async_std::task::block_on(Utils::run_ocr_with_number(&stock_contour_image)).unwrap().trim().to_string();
             if let Some(caps) = re.captures( text ) {
-                smashbros_data.set_stock( player_count, (&caps[1]).parse().unwrap_or(-1) );
+                smashbros_data.guess_stock( player_count, (&caps[1]).parse().unwrap_or(-1) );
             }
         }
 
@@ -929,12 +932,12 @@ impl Default for GameEndScene {
                 imgcodecs::imread("resource/game_set_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
                 Some(imgcodecs::imread("resource/game_set_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
             ).unwrap()
-            .set_border(0.98),
+            .set_border(0.95),
             time_up_scene_judgment: SceneJudgment::new_gray(
                 imgcodecs::imread("resource/time_up_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
                 Some(imgcodecs::imread("resource/time_up_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
             ).unwrap()
-            .set_border(0.98),
+            .set_border(0.95),
         }
     }
 }
@@ -1114,7 +1117,7 @@ impl ResultScene {
                     scene_judgment.match_captured_scene(&order_number_area_image).await;
 
                     if scene_judgment.is_near_match() {
-                        smashbros_data.set_order(player_number, order_count+1);
+                        smashbros_data.guess_order(player_number, order_count+1);
                     }
                 });
             }
@@ -1166,7 +1169,7 @@ impl ResultScene {
             // tesseract で文字(数値)を取得して, 余計な文字を排除
             let text = &async_std::task::block_on(Utils::run_ocr_with_number(&power_area_image)).unwrap().to_string();
             let number = re.split(text).collect::<Vec<&str>>().join(""); // 5桁まで (\d,\d,\d,\d,\d)
-            smashbros_data.set_power( player_count, number.parse().unwrap_or(-1) );
+            smashbros_data.guess_power( player_count, number.parse().unwrap_or(-1) );
         }
 
         Ok(smashbros_data.get_player_count() == skip_count)
@@ -1178,16 +1181,19 @@ impl ResultScene {
 pub struct SceneManager {
     pub capture: Box<dyn CaptureTrait>,
     pub scene_loading: LoadingScene,
-    pub scene_list: Vec<Box<dyn SceneTrait + 'static>>,
+    pub scene_list: Vec<Box<dyn SceneTrait + 'static>>, // koko: 'staticいらないのでは？
     pub now_scene: SceneList,
     pub smashbros_data: SmashbrosData,
+    pub dummy_local_time: chrono::DateTime<chrono::Local>,
 }
 impl Default for SceneManager {
     fn default() -> Self {
         Self {
 //            capture: Box::new(CaptureFromWindow::new("MonsterX U3.0R", "")),
+//            capture: Box::new(CaptureFromWindow::new("ウィンドウ プロジェクター (プレビュー)", "").unwrap()),
 //            capture: Box::new(CaptureFromVideoDevice::new(0)),
-            capture: Box::new(CaptureFromDesktop::default()),
+//            capture: Box::new(CaptureFromDesktop::default()),
+            capture: Box::new(CaptureFromEmpty::default()),
             scene_loading: LoadingScene::default(),
             scene_list: vec![
                 Box::new(ReadyToFightScene::default()),
@@ -1201,17 +1207,26 @@ impl Default for SceneManager {
             ],
             now_scene: SceneList::default(),
             smashbros_data: SmashbrosData::default(),
+            dummy_local_time: chrono::Local::now(),
         }
     }
 }
 impl SceneManager {
-    pub fn update(&mut self) -> opencv::Result<()> {
+    pub fn get_now_data(&self) -> SmashbrosData {
+        let mut cloned_data = self.smashbros_data.clone();
+        // 重複操作されないために適当な時間で保存済みのデータにする
+        cloned_data.set_id(Some("dummy_id".to_string()));
+        
+        cloned_data
+    }
+
+    pub fn update(&mut self) -> opencv::Result<Option<Message>> {
         let mut capture_image = self.capture.get_mat()?;
 
         if self.scene_loading.is_scene(&capture_image, None)? {
             // 読込中の画面(真っ黒に近い)はテンプレートマッチングで 1.0 がでてしまうので回避
             GUI::set_title(&format!("loading..."));
-            return Ok(());
+            return Ok(None);
         }
 
         GUI::set_title(&format!(""));
@@ -1244,8 +1259,8 @@ impl SceneManager {
             }
         }
 
-        opencv::highgui::imshow("capture image", &capture_image).unwrap();
+        opencv::highgui::imshow("capture image", &capture_image)?;
 
-        Ok(())
+        Ok(None)
     }
 }

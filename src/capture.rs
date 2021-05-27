@@ -14,7 +14,11 @@ use winapi::um::wingdi::*;
 use winapi::um::winnt::HANDLE;
 use winapi::um::winuser::*;
 
-use crate::scene::{ReadyToFightScene, SceneTrait};
+use crate::scene::{
+    ReadyToFightScene,
+    SceneTrait
+};
+use crate::gui::GUI;
 
 
 /// &str -> WCHAR
@@ -34,6 +38,7 @@ struct CaptureDC {
     prev_image: core::Mat,
     compatibility_dc_handle: HDC,
     pixel_buffer_pointer: LPVOID,
+    bitmap: BITMAP,
     size: usize,
     width: i32, height: i32,
 }
@@ -43,6 +48,7 @@ impl Default for CaptureDC {
             prev_image: core::Mat::default(),
             compatibility_dc_handle: 0 as HDC,
             pixel_buffer_pointer: 0 as LPVOID,
+            bitmap: unsafe{ std::mem::zeroed() },
             size: 0,
             width: 0, height: 0,
         }
@@ -84,7 +90,7 @@ impl CaptureDC {
             // サイズ変更があると作成し直す
             return self.get_mat_from_hwnd(handle, content_area, offset_pos);
         }
-
+        
         unsafe {
             let dc_handle = GetDC(handle);
 
@@ -102,14 +108,13 @@ impl CaptureDC {
             }
 
             let bitmap_handle = GetCurrentObject(self.compatibility_dc_handle, OBJ_BITMAP) as HBITMAP;
-            let mut bitmap: BITMAP = std::mem::zeroed();
-            GetObjectW(bitmap_handle as HANDLE, std::mem::size_of::<BITMAP>() as i32, &mut bitmap as PBITMAP as LPVOID);
+            GetObjectW(bitmap_handle as HANDLE, std::mem::size_of::<BITMAP>() as i32, &mut self.bitmap as PBITMAP as LPVOID);
 
             let mut bitmap_info: BITMAPINFO = BITMAPINFO {
                 bmiHeader: BITMAPINFOHEADER {
                     biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
                     biWidth: self.width, biHeight: -self.height,
-                    biPlanes: 1, biBitCount: bitmap.bmBitsPixel, biCompression: BI_RGB,
+                    biPlanes: 1, biBitCount: self.bitmap.bmBitsPixel, biCompression: BI_RGB,
                     ..Default::default()
                 },
                 ..Default::default()
@@ -139,23 +144,22 @@ impl CaptureDC {
             // BITMAP 情報取得(BITMAP経由でしかデスクトップの時の全体の大きさを取得する方法がわからなかった(!GetWindowRect, !GetClientRect, !GetDeviceCaps))
             // しかもここの bmBits をコピーしたらどっかわからん領域をコピーしてしまう(見た感じ過去に表示されていた内容からメモリが更新されてない？？？)
             let bitmap_handle = GetCurrentObject(dc_handle, OBJ_BITMAP) as HBITMAP;
-            let mut bitmap: BITMAP = std::mem::zeroed();
-            GetObjectW(bitmap_handle as HANDLE, std::mem::size_of::<BITMAP>() as i32, &mut bitmap as PBITMAP as LPVOID);
-            self.width = bitmap.bmWidth;
-            self.height = bitmap.bmHeight;
+            GetObjectW(bitmap_handle as HANDLE, std::mem::size_of::<BITMAP>() as i32, &mut self.bitmap as PBITMAP as LPVOID);
+            self.width = self.bitmap.bmWidth;
+            self.height = self.bitmap.bmHeight;
 
             // ので一度どっかにコピーするためにほげほげ
             let mut bitmap_info: BITMAPINFO = BITMAPINFO {
                 bmiHeader: BITMAPINFOHEADER {
                     biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
                     biWidth: self.width, biHeight: -self.height,
-                    biPlanes: 1, biBitCount: bitmap.bmBitsPixel, biCompression: BI_RGB,
+                    biPlanes: 1, biBitCount: self.bitmap.bmBitsPixel, biCompression: BI_RGB,
                     ..Default::default()
                 },
                 ..Default::default()
             };
 
-            let channels = bitmap.bmBitsPixel as i32 / 8;
+            let channels = self.bitmap.bmBitsPixel as i32 / 8;
             self.size = (self.width * self.height * channels) as usize;
             let mut pixel_buffer = Vec::<u8>::with_capacity(self.size);
             pixel_buffer.set_len(self.size);
@@ -172,13 +176,12 @@ impl CaptureDC {
             }
 
             let bitmap_handle = GetCurrentObject(self.compatibility_dc_handle, OBJ_BITMAP) as HBITMAP;
-            let mut bitmap: BITMAP = std::mem::zeroed();
-            GetObjectW(bitmap_handle as HANDLE, std::mem::size_of::<BITMAP>() as i32, &mut bitmap as PBITMAP as LPVOID);
+            GetObjectW(bitmap_handle as HANDLE, std::mem::size_of::<BITMAP>() as i32, &mut self.bitmap as PBITMAP as LPVOID);
 
             // オーバーヘッドやばいけど毎回作成する
             let temp_mat = core::Mat::new_rows_cols_with_data(
                 self.height, self.width, core::CV_MAKETYPE(core::CV_8U, channels),
-                bitmap.bmBits as LPVOID, core::Mat_AUTO_STEP
+                self.bitmap.bmBits as LPVOID, core::Mat_AUTO_STEP
             )?;
             
             // move. content_area が指定されている場合は切り取る
@@ -190,6 +193,8 @@ impl CaptureDC {
             // メモリ開放
             ReleaseDC(handle, dc_handle);
 
+            self.width = self.prev_image.cols();
+            self.height = self.prev_image.rows();
             Ok(self.prev_image.clone())
         }
     }
@@ -253,54 +258,105 @@ pub struct CaptureFromWindow {
     pub win_class: String,
     win_handle: winapi::shared::windef::HWND,
     pub prev_image: core::Mat,
-    pub content_area: Option<core::Rect>,
+    pub content_area: core::Rect,
 }
 impl Default for CaptureFromWindow {
     fn default() -> Self {
-        CaptureFromWindow::new("", "")
+        CaptureFromWindow::new("", "").unwrap()
     }
 }
 impl CaptureTrait for CaptureFromWindow {
     fn get_mat(&mut self) -> opencv::Result<core::Mat> {
-        if let Ok(mat) = self.capture_dc.get_mat(self.win_handle, None, None) {
-            if self.win_handle.is_null() {
-                return Err( opencv::Error::new(0, "window handle is null".to_string()) );
-            }
+        if self.win_handle.is_null() {
+            return Ok(unsafe{core::Mat::new_rows_cols(360, 640, core::CV_8UC4)}.unwrap());
+        }
+        if let Ok(mat) = self.capture_dc.get_mat(self.win_handle, Some(self.content_area), None) {
+            let resize = core::Size { width: 640, height: 360 };
 
-            self.prev_image.release()?;
-            self.prev_image = mat;
+            if mat.cols() != resize.width || mat.rows() != resize.height {
+                self.prev_image.release()?;
+                imgproc::resize(&mat, &mut self.prev_image, resize, 0.0, 0.0, opencv::imgproc::INTER_LINEAR).unwrap();
+            } else {
+                self.prev_image.release()?;
+                self.prev_image = mat;
+            }
         }
         Ok(self.prev_image.try_clone()?)
     }
 }
 impl CaptureFromWindow {
-    pub fn new(win_caption: &str, win_class: &str) -> Self {
+    pub fn new(win_caption: &str, win_class: &str) -> opencv::Result<Self> {
         let win_handle = unsafe {
             winapi::um::winuser::FindWindowW(
                 if win_class.is_empty() { std::ptr::null_mut() } else { to_wchar(win_class) },
                 if win_caption.is_empty() { std::ptr::null_mut() } else { to_wchar(win_caption) }
             )
         };
+        if win_handle.is_null() {
+            return Err( opencv::Error::new(0, "window handle is null".to_string()) );
+        }
 
-        let content_area = if win_handle.is_null() {
-            None
-        } else {
-            let mut client_rect = winapi::shared::windef::RECT { left:0, top:0, right:0, bottom:0 };
-            unsafe { winapi::um::winuser::GetClientRect(win_handle, &mut client_rect) };
-
-            Some(core::Rect {
-                x: client_rect.left, y: client_rect.top, width: client_rect.right, height: client_rect.bottom
-            })
+        let mut client_rect = winapi::shared::windef::RECT { left:0, top:0, right:0, bottom:0 };
+        unsafe { winapi::um::winuser::GetClientRect(win_handle, &mut client_rect) };
+        let mut content_area = core::Rect {
+            x: client_rect.left, y: client_rect.top,
+            width: client_rect.right, height: client_rect.bottom
         };
 
-        Self {
+        let mut own = Self {
             win_caption: win_caption.to_string(),
             win_class: win_class.to_string(),
             win_handle: win_handle,
             prev_image: core::Mat::default(),
             content_area: content_area,
             capture_dc: CaptureDC::default(),
+        };
+
+        let mut ready_to_fight_scene = ReadyToFightScene::new_gray();
+        let mut find_capture = |own: &mut Self, content_area: &core::Rect, | -> bool {
+            let capture_image = own.get_mat().unwrap();
+            if capture_image.empty().unwrap() {
+                own.content_area = *content_area;
+                return false;
+            }
+
+            // より精度が高いほうを選択
+            ready_to_fight_scene.is_scene(&capture_image, None).unwrap();
+            let scene_judgment = if ready_to_fight_scene.red_scene_judgment.prev_match_ratio < ready_to_fight_scene.grad_scene_judgment.prev_match_ratio {
+                &ready_to_fight_scene.grad_scene_judgment
+            } else {
+                &ready_to_fight_scene.red_scene_judgment
+            };
+
+            if scene_judgment.is_near_match() {
+                println!("found window:{:3.3}% {:?}", scene_judgment.prev_match_ratio, own.content_area);
+                return true;
+            }
+
+            false
+        };
+
+        // 微調整(大きさの変更での座標調整)
+        content_area = own.content_area;
+        'find_capture_resize: for y in [-1, 0, 1].iter() {
+            for x in [-1, 0, 1].iter() {
+                own.content_area.x = content_area.x + x;
+                own.content_area.y = content_area.y + y;
+                if find_capture(&mut own, &content_area) {
+                    break 'find_capture_resize;
+                }
+                own.content_area = content_area;
+            }
         }
+        // 微調整(解像度の変更での調整)
+        content_area = own.content_area;
+        own.content_area.width = 640;
+        own.content_area.height = 360;
+        if !find_capture(&mut own, &content_area) {
+            own.content_area = content_area;
+        }
+
+        Ok(own)
     }
 }
 
@@ -406,6 +462,21 @@ impl CaptureFromDesktop {
             monitor_lefttop: monitor_lefttop
         }
     }
+}
+
+/// デフォルト用の空 Mat
+pub struct CaptureFromEmpty {
+    pub prev_image: core::Mat,
+}
+impl Default for CaptureFromEmpty {
+    fn default() -> Self {
+        Self {
+            prev_image: imgcodecs::imread("resource/loading_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap()
+        }
+    }
+}
+impl CaptureTrait for CaptureFromEmpty {
+    fn get_mat(&mut self) -> opencv::Result<core::Mat> { Ok(self.prev_image.try_clone()?) }
 }
 
 
@@ -700,5 +771,3 @@ impl CaptureFrameStore {
         Ok(true)
     }
 }
-
-

@@ -26,6 +26,7 @@ fn make_gui_run() -> Result<(), iced_winit::Error> {
     let settings = iced_winit::Settings::<()> {
         window: window,
         flags: (),
+        exit_on_close_request: true
     };
     let renderer_settings = iced_wgpu::Settings {
         antialiasing: Some(iced_wgpu::settings::Antialiasing::MSAAx4),
