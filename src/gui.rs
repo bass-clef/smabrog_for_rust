@@ -3,21 +3,28 @@ use iced::{
     pane_grid, scrollable,
     Button, Column, Command, Container, Element,
     HorizontalAlignment, Length,
-    PaneGrid, Scrollable, Text, VerticalAlignment,
+    PaneGrid, PickList, Scrollable, Text, TextInput,
+    VerticalAlignment,
 };
 use std::time::{Duration, Instant};
 
-use crate::engine::*;
+use crate::capture::CaptureFromVideoDevice;
 use crate::data::{
     SmashbrosData, SmashbrosDataTrait,
     SMASHBROS_RESOURCE
 };
+use crate::engine::*;
 
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum Message {
     None,
-    ButtonPressed,
+    CaptureModeChanged(CaptureMode),
+    CaptureDeviceChanged(String),
+    DummyMessage,
+    InputWindowCaption(String),
+    InputWindowClass(String),
+    SettingsApply,
     Tick(Instant),
     TitleClicked(pane_grid::Pane),
     TileClicked(pane_grid::Pane),
@@ -30,6 +37,7 @@ pub struct GUI {
     pane_battle_infomation: pane_grid::State<ContentBattleInfomation>,
     pane_battle_history: pane_grid::State<ContentBattleHistory>,
     pane_settings: pane_grid::State<ContentSettings>,
+    selected_capture_mode: CaptureMode,
 }
 impl Default for GUI {
     fn default() -> Self {
@@ -41,6 +49,7 @@ impl Default for GUI {
             pane_battle_infomation: pane_grid::State::new(ContentBattleInfomation::new()).0,
             pane_battle_history: pane_grid::State::new(ContentBattleHistory::new()).0,
             pane_settings: pane_grid::State::new(ContentSettings::new()).0,
+            selected_capture_mode: Default::default(),
         }
     }
 }
@@ -67,7 +76,7 @@ impl iced_winit::application::Application for GUI {
             match event {
                 iced_winit::Event::Mouse(event) => match event {
                     iced::mouse::Event::ButtonPressed(_) => {
-                        Some(Message::ButtonPressed)
+                        Some(Message::DummyMessage)
                     },
                     _ => None,
                 },
@@ -90,9 +99,38 @@ impl iced_winit::Program for GUI {
 
     // subscription で予約発行されたイベントの処理
     fn update(&mut self, message: Message, _clipboard: &mut Self::Clipboard) -> Command<Message> {
+        use std::collections::HashMap;
         match message {
-            Message::ButtonPressed => {
-                self.count = 0;
+            Message::CaptureModeChanged(capture_mode) => self.selected_capture_mode = capture_mode,
+            Message::CaptureDeviceChanged(device_name) => {
+                if let CaptureMode::VideoDevice(_, dev_id, dev_name) = self.selected_capture_mode.as_mut() {
+                    *dev_name = device_name.clone();
+                }
+            },
+            Message::DummyMessage => self.count = 0,
+            Message::InputWindowCaption(window_caption) => {
+                if let CaptureMode::Window(_, win_caption, _) = self.selected_capture_mode.as_mut() {
+                    *win_caption = window_caption.clone();
+                }
+            },
+            Message::InputWindowClass(window_class) => {
+                if let CaptureMode::Window(_, _, win_class) = self.selected_capture_mode.as_mut() {
+                    *win_class = window_class.clone();
+                }
+            },
+            Message::SettingsApply => {
+                // USB の ID は直前で書き換え
+                if let CaptureMode::VideoDevice(_, dev_id, dev_name) = self.selected_capture_mode.as_mut() {
+                    if let Some(device_list) = CaptureFromVideoDevice::get_device_list() {
+                        if let Some(device_id) = device_list.get(dev_name) {
+                            *dev_id = *device_id;
+                        }
+                    }
+                }
+
+                if let Err(e) = self.engine.change_capture_mode(self.selected_capture_mode.as_ref()) {
+
+                }
             },
             Message::Tick(_) => {
                 self.count += 1;
@@ -129,7 +167,7 @@ impl iced_winit::Program for GUI {
                     .style(style::Pane{ pane_type: style::PaneType::Information })
             })
             .width(Length::Fill)
-            .height(Length::FillPortion(2))
+            .height(Length::FillPortion(16))
             .on_click(Message::TitleClicked);
 
         let data_list = Arc::new(Mutex::new( self.engine.get_data_latest_10() ));
@@ -145,20 +183,18 @@ impl iced_winit::Program for GUI {
                     .style(style::Pane{ pane_type: style::PaneType::History })
             })
             .width(Length::Fill)
-            .height(Length::FillPortion(6))
+            .height(Length::FillPortion(64))
             .on_click(Message::TitleClicked);
 
+        let selected_capture_mode = self.selected_capture_mode.as_ref();
         let pane_settings = PaneGrid::new(&mut self.pane_settings, |pane, content| {
-                let title_bar = pane_grid::TitleBar::new(Text::new("Settings:"))
-                    .padding(10)
-                    .style(style::TitleBar{ pane_type: style::PaneType::Settings });
-
-                pane_grid::Content::new( content.view(pane) )
+                let (view, title_bar) = content.view(pane, selected_capture_mode);
+                pane_grid::Content::new(view)
                     .title_bar(title_bar)
                     .style(style::Pane{ pane_type: style::PaneType::Settings })
             })
             .width(Length::Fill)
-            .height(Length::FillPortion(2))
+            .height(Length::FillPortion(20))
             .on_click(Message::TitleClicked);
 
         Column::new()
@@ -209,7 +245,7 @@ impl ContentBattleInfomation {
         }
     }
 
-    fn view(&mut self, pane: pane_grid::Pane, data: SmashbrosData) -> Element<Message> {
+    fn view(&mut self, _pane: pane_grid::Pane, data: SmashbrosData) -> Element<Message> {
         use std::sync::{ Arc, Mutex };
         let data = Arc::new(Mutex::new( data ));
         let pane_now_battle_tile = PaneGrid::new(&mut self.pane_now_battle_tile, |pane, content|{
@@ -245,7 +281,7 @@ impl ContentBattleHistory {
         }
     }
 
-    fn view(&mut self, pane: pane_grid::Pane, data_list: Vec<SmashbrosData>) -> Element<Message> {
+    fn view(&mut self, _pane: pane_grid::Pane, data_list: Vec<SmashbrosData>) -> Element<Message> {
         let mut scrollable = Scrollable::new(&mut self.scroll)
             .spacing(5)
             .width(Length::Fill)
@@ -286,58 +322,142 @@ impl ContentBattleHistory {
 
 // 設定変更
 struct ContentSettings {
+    dummy_button: iced::button::State,
     apply_button: iced::button::State,
     prev_time: std::time::Instant,
-    dummy_button: iced::button::State,
+
+    capture_mode_pick_list: iced::pick_list::State<CaptureMode>,
+    device_list_pick_list: iced::pick_list::State<String>,
+
+    capture_mode_all: [CaptureMode; 4],
+    device_name_list: Box<[String]>,
+
+    window_caption: iced::text_input::State,
+    window_class: iced::text_input::State,
 }
 impl ContentSettings {
     fn new() -> Self {
+        let mut device_name_list: Vec<String> = Vec::new();
+        if let Some(devices) = CaptureFromVideoDevice::get_device_list() {
+            for (device_name, _) in devices.iter() {
+                device_name_list.push(device_name.clone());
+            }
+        }
+
         Self {
+            dummy_button: iced::button::State::new(),
             apply_button: iced::button::State::new(),
             prev_time: std::time::Instant::now(),
-            dummy_button: iced::button::State::new(),
+
+            capture_mode_pick_list: Default::default(),
+            device_list_pick_list: Default::default(),
+            
+            device_name_list: device_name_list.into_boxed_slice(),
+            capture_mode_all: CaptureMode::ALL.clone(),
+
+            window_caption: iced::text_input::State::focused(),
+            window_class: iced::text_input::State::focused(),
         }
     }
 
-    fn view(&mut self, pane: pane_grid::Pane) -> Element<Message> {
-        let mut controlls = Column::new()
-            .spacing(5);
+    /// 借用書の解決が難しかったので、タプルで content と title_bar を返す
+    /// @return (Element<Message>, pane_grid::TitleBar<Message>) (content, title_bar)
+    fn view<'b>(&'b mut self, _pane: pane_grid::Pane, capture_mode: &CaptureMode) -> (Element<Message>, pane_grid::TitleBar<Message>) {
+        // content
+        let mut controlls = Column::new();
 
-        let mut fps_row = iced::Row::new()
+        let capture_mode_row = iced::Row::new()
             .align_items(iced::Align::Center)
-            .push(Text::new("Job: "));
-        let now = std::time::Instant::now();
-        fps_row = match self.prev_time.elapsed().as_millis() as i32 {
-              0 ..=  99 => fps_row.push(
-                Button::new(&mut self.dummy_button, Text::new("Good"))
-                    .style(style::ColorButton{ color: style::SUCCESS_COLOR })
-                    .on_press(Message::ButtonPressed),
-            ),
-            100 ..= 999 => fps_row.push(
-                Button::new(&mut self.dummy_button, Text::new("Uhh."))
-                    .style(style::ColorButton{ color: style::INFO_COLOR })
-                    .on_press(Message::ButtonPressed),
-            ),
-            _ => fps_row.push(
-                Button::new(&mut self.dummy_button, Text::new("Busy"))
-                    .style(style::ColorButton{ color: style::WARNING_COLOR })
-                    .on_press(Message::ButtonPressed),
-            ),
-        };
-        self.prev_time = now;
-        controlls = controlls.push(fps_row);
+            .spacing(5)
+            .push(Text::new("Capture Mode:"))
+            .push(PickList::new(
+                &mut self.capture_mode_pick_list,
+                &self.capture_mode_all[..],
+                Some(capture_mode.clone()),
+                Message::CaptureModeChanged
+            ));
+        controlls = controlls.push(capture_mode_row);
+
+        match capture_mode {
+            CaptureMode::Window(_, win_caption, win_class) => {
+                let capture_window_row = iced::Row::new()
+                    .align_items(iced::Align::Center)
+                    .push(TextInput::new(
+                            &mut self.window_caption,
+                            "caption",
+                            win_caption,
+                            Message::InputWindowCaption
+                        )
+                    )
+                    .push(TextInput::new(
+                            &mut self.window_class,
+                            "class (can blank)",
+                            win_class,
+                            Message::InputWindowClass
+                        )
+                    );
+
+                controlls = controlls.push(capture_window_row);
+            },
+            CaptureMode::VideoDevice(_, _, device_name) => {
+                let capture_video_device_row = iced::Row::new()
+                    .align_items(iced::Align::Center)
+                    .push(PickList::new(
+                        &mut self.device_list_pick_list,
+                        &*self.device_name_list,
+                        Some(device_name.clone()),
+                        Message::CaptureDeviceChanged
+                    ));
+
+                controlls = controlls.push(capture_video_device_row);
+            }
+            _ => ()
+        }
+
         
         controlls = controlls.push(
             Button::new(&mut self.apply_button,
                     Text::new("Apply").horizontal_alignment(HorizontalAlignment::Center)
             )
             .width(Length::Fill)
-            .on_press(Message::ButtonPressed),
+            .on_press(Message::SettingsApply),
         );
 
-        Container::new(controlls)
-            .padding(5)
-            .into()
+        // title_bar
+        let mut title_bar_row = iced::Row::new()
+            .align_items(iced::Align::Center)
+            .push(Text::new("Settings: ["))
+            .push(Text::new("Job: "));
+
+        title_bar_row = match self.prev_time.elapsed().as_millis() as i32 {
+            0 ..=  99 => title_bar_row.push(
+                Button::new(&mut self.dummy_button, Text::new("Good"))
+                    .style(style::ColorButton{ color: style::SUCCESS_COLOR })
+                    .on_press(Message::None),
+            ),
+            100 ..= 999 => title_bar_row.push(
+                Button::new(&mut self.dummy_button, Text::new("Uhh."))
+                    .style(style::ColorButton{ color: style::INFO_COLOR })
+                    .on_press(Message::None),
+            ),
+            _ => title_bar_row.push(
+                Button::new(&mut self.dummy_button, Text::new("Busy"))
+                    .style(style::ColorButton{ color: style::WARNING_COLOR })
+                    .on_press(Message::None),
+            ),
+        };
+        self.prev_time = std::time::Instant::now();
+
+        title_bar_row = title_bar_row.push(Text::new(" ]"));
+
+        (
+            Container::new(controlls)
+                .padding(5)
+                .into(),
+            pane_grid::TitleBar::new(title_bar_row)
+                .padding(10)
+                .style(style::TitleBar{ pane_type: style::PaneType::Settings })
+        )
     }
 }
 
@@ -374,7 +494,7 @@ impl ContentBattleTile {
         }
     }
 
-    fn view(&mut self, pane: pane_grid::Pane, data: SmashbrosData) -> Element<Message> {
+    fn view(&mut self, _pane: pane_grid::Pane, data: SmashbrosData) -> Element<Message> {
         let mut row = iced::Row::new()
             .spacing(5)
             .align_items(iced::Align::Center);
@@ -398,20 +518,18 @@ impl ContentBattleTile {
 
         row = row.push(
             iced::Column::new()
-                .align_items(iced::Align::Start)
+                .align_items(iced::Align::Center)
                 .push(
                     Text::new(format!("Rule: {:?}",
                             data.get_rule()
                         ))
                         .width(Length::Fill)
-                        .size(14)
                 )
                 .push(
                     Text::new(format!("Stock: {} - {} / {} - {}",
                             data.get_stock(0), data.get_stock(1), data.get_max_stock(0), data.get_max_stock(1)
                         ))
                         .width(Length::Fill)
-                        .size(14)
                 )
         );
 
@@ -419,6 +537,54 @@ impl ContentBattleTile {
             .style(style::Pane{ pane_type: style::PaneType::Tile })
             .into()
     }
+}
+
+// 検出する方法
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CaptureMode {
+    Empty(&'static str),
+    Desktop(&'static str),
+    /// _, device_id
+    VideoDevice(&'static str, i32, String),
+    /// _, window_caption, window_class
+    Window(&'static str, String, String),
+}
+impl CaptureMode {
+    const ALL: [CaptureMode; 4] = [
+        Self::Empty { 0:"Not Capture" },
+        Self::Desktop { 0:"From Desktop" },
+        Self::VideoDevice { 0:"From Video Device", 1:0, 2:String::new() },
+        Self::Window { 0:"From Window", 1:String::new(), 2:String::new() },
+    ];
+}
+impl Default for CaptureMode {
+    fn default() -> Self {
+        Self::ALL[0].clone()
+    }
+}
+impl std::fmt::Display for CaptureMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Empty(show_text) | Self::Desktop(show_text)
+                    | Self::VideoDevice(show_text, _, _) | Self::Window(show_text, _, _) => show_text
+            }
+        )
+    }
+}
+impl AsMut<CaptureMode> for CaptureMode {
+    fn as_mut(&mut self) -> &mut CaptureMode { self }
+}
+impl AsRef<CaptureMode> for CaptureMode {
+    fn as_ref(&self) -> &CaptureMode { self }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CaptureModeFromWindow {
+    win_caption: String,
+    win_class: String,
 }
 
 

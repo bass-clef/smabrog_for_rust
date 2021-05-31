@@ -18,7 +18,6 @@ use crate::scene::{
     ReadyToFightScene,
     SceneTrait
 };
-use crate::gui::GUI;
 
 
 /// &str -> WCHAR
@@ -119,8 +118,14 @@ impl CaptureDC {
                 },
                 ..Default::default()
             };
+            /*
+            // Mat の公式?の変換方法なのに、セグフォで落ちる (as_raw_mit_Mat() で move してる？)
             GetDIBits(self.compatibility_dc_handle, bitmap_handle, 0, self.height as u32,
                 self.prev_image.as_raw_mut_Mat() as LPVOID, &mut bitmap_info, DIB_RGB_COLORS);
+            */
+            // prev_image に割り当てていたポインタへ直接コピーする(get_mat_from_hwndで確保したやつ)
+            GetDIBits(self.compatibility_dc_handle, bitmap_handle, 0, self.height as u32,
+                self.pixel_buffer_pointer, &mut bitmap_info, DIB_RGB_COLORS);
 
             ReleaseDC(handle, dc_handle);
         }
@@ -185,6 +190,7 @@ impl CaptureDC {
             )?;
             
             // move. content_area が指定されている場合は切り取る
+            self.prev_image.release()?;
             self.prev_image = match content_area {
                 Some(rect) => core::Mat::roi(&temp_mat, rect)?,
                 None => temp_mat,
@@ -207,27 +213,10 @@ pub trait CaptureTrait {
     fn get_mat(&mut self) -> opencv::Result<core::Mat>;
 }
 
-pub struct CaptureNone {
-    pub prev_image: core::Mat,
-}
-impl Default for CaptureNone {
-    fn default() -> Self { Self {
-        prev_image: core::Mat::default()
-    } }
-}
-impl CaptureTrait for CaptureNone {
-    fn get_mat(&mut self) -> opencv::Result<core::Mat> { Ok(self.prev_image.try_clone()?) }
-}
-
 /// ビデオキャプチャ から Mat
 pub struct CaptureFromVideoDevice {
     pub video_capture: Box<dyn videoio::VideoCaptureTrait>,
     pub prev_image: core::Mat,
-}
-impl Default for CaptureFromVideoDevice {
-    fn default() -> Self {
-        CaptureFromVideoDevice::new(0)
-    }
 }
 impl CaptureTrait for CaptureFromVideoDevice {
     fn get_mat(&mut self) -> opencv::Result<core::Mat> {
@@ -239,15 +228,40 @@ impl CaptureTrait for CaptureFromVideoDevice {
     }
 }
 impl CaptureFromVideoDevice {
-    pub fn new(index: i32) -> Self {
+    pub fn new(index: i32) -> opencv::Result<Self> {
         let mut own = Self {
-            video_capture: Box::new(videoio::VideoCapture::new(index, videoio::CAP_DSHOW).unwrap()),
+            video_capture: Box::new(videoio::VideoCapture::new(index, videoio::CAP_DSHOW)?),
             prev_image: core::Mat::default(),
         };
-        own.video_capture.set(opencv::videoio::CAP_PROP_FRAME_WIDTH, 640f64).unwrap();
-        own.video_capture.set(opencv::videoio::CAP_PROP_FRAME_HEIGHT, 360f64).unwrap();
+        own.video_capture.set(opencv::videoio::CAP_PROP_FRAME_WIDTH, 640f64)?;
+        own.video_capture.set(opencv::videoio::CAP_PROP_FRAME_HEIGHT, 360f64)?;
 
-        own
+        Ok(own)
+    }
+
+
+    /// OpenCV で VideoCapture の ID の一覧が取れないので(永遠の謎)、取得して返す
+    /// Rust での DirectX系のAPI, COM系が全然わからんかったので、
+    /// C++ の MSDN のソースを python でコンパイルした exe を実行して正規表現にかけて返す
+    /// @return Option<Vec<(i32, String)>> 無いか、[DeviceName]と[DeviceID]が入った[HashMap]
+    pub fn get_device_list() -> Option<std::collections::HashMap<String, i32>> {
+        use std::collections::HashMap;
+        if !cfg!(target_os = "windows") {
+            return None;
+        }
+
+        match std::process::Command::new("video_device_list.exe").output() {
+            Err(_) => None,
+            Ok(output) => {
+                let mut device_list: HashMap<String, i32> = HashMap::new();
+                let re = regex::Regex::new(r"(?P<id>\d+):(?P<name>.+)\r\n").unwrap();
+                for caps in re.captures_iter( std::str::from_utf8(&output.stdout).unwrap_or("") ) {
+                    device_list.insert( String::from(&caps["name"]), caps["id"].parse::<i32>().unwrap_or(-1) );
+                }
+
+                Some(device_list)
+            }
+        }
     }
 }
 
@@ -259,11 +273,6 @@ pub struct CaptureFromWindow {
     win_handle: winapi::shared::windef::HWND,
     pub prev_image: core::Mat,
     pub content_area: core::Rect,
-}
-impl Default for CaptureFromWindow {
-    fn default() -> Self {
-        CaptureFromWindow::new("", "").unwrap()
-    }
 }
 impl CaptureTrait for CaptureFromWindow {
     fn get_mat(&mut self) -> opencv::Result<core::Mat> {
@@ -340,6 +349,9 @@ impl CaptureFromWindow {
         content_area = own.content_area;
         'find_capture_resize: for y in [-1, 0, 1].iter() {
             for x in [-1, 0, 1].iter() {
+                if own.content_area.x + x < 0 || own.content_area.y + y < 0 {
+                    continue;
+                }
                 own.content_area.x = content_area.x + x;
                 own.content_area.y = content_area.y + y;
                 if find_capture(&mut own, &content_area) {
@@ -348,6 +360,7 @@ impl CaptureFromWindow {
                 own.content_area = content_area;
             }
         }
+
         // 微調整(解像度の変更での調整)
         content_area = own.content_area;
         own.content_area.width = 640;
@@ -369,11 +382,6 @@ pub struct CaptureFromDesktop {
     content_area: core::Rect,
     resolution: i32,
 }
-impl Default for CaptureFromDesktop {
-    fn default() -> Self {
-        CaptureFromDesktop::new()
-    }
-}
 impl CaptureTrait for CaptureFromDesktop {
     fn get_mat(&mut self) -> opencv::Result<core::Mat> {
         if let Ok(mat) = self.capture_dc.get_mat(self.win_handle, Some(self.content_area), Some(self.monitor_lefttop)) {
@@ -392,7 +400,7 @@ impl CaptureTrait for CaptureFromDesktop {
     }
 }
 impl CaptureFromDesktop {
-    pub fn new() -> Self {
+    pub fn new() -> opencv::Result<Self> {
         // デスクトップ画面から ReadyToFight を検出して位置を特定する
         println!("finding capture area from desktop...");
         let desktop_handle = 0 as winapi::shared::windef::HWND;
@@ -453,14 +461,14 @@ impl CaptureFromDesktop {
             }
         }
 
-        Self {
+        Ok(Self {
             capture_dc: capture_dc,
             win_handle: desktop_handle,
             prev_image: core::Mat::default(),
             content_area: content_area,
             resolution: find_resolution,
             monitor_lefttop: monitor_lefttop
-        }
+        })
     }
 }
 
@@ -468,15 +476,15 @@ impl CaptureFromDesktop {
 pub struct CaptureFromEmpty {
     pub prev_image: core::Mat,
 }
-impl Default for CaptureFromEmpty {
-    fn default() -> Self {
-        Self {
-            prev_image: imgcodecs::imread("resource/loading_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap()
-        }
-    }
-}
 impl CaptureTrait for CaptureFromEmpty {
     fn get_mat(&mut self) -> opencv::Result<core::Mat> { Ok(self.prev_image.try_clone()?) }
+}
+impl CaptureFromEmpty {
+    pub fn new() -> opencv::Result<Self> {
+        Ok(Self {
+            prev_image: imgcodecs::imread("resource/loading_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap()
+        })
+    }
 }
 
 

@@ -51,7 +51,7 @@ impl SmashbrosResourceText {
     }
 }
 
-// 画像とかも入ったリソース
+/// 画像とかも入ったリソース
 pub struct SmashbrosResource {
     pub version: String,
     pub character_list: HashMap<String, String>,
@@ -103,7 +103,7 @@ pub static mut SMASHBROS_RESOURCE: WrappedSmashbrosResource = WrappedSmashbrosRe
 };
 
 
-/* 戦歴を管理するクラス */
+/// 戦歴を管理するクラス
 pub struct BattleHistory {
     db_client: Client,
 }
@@ -133,11 +133,31 @@ impl BattleHistory {
     /// battle_data コレクションへ戦歴情報を挿入
     // [test data]
     // use smabrog-db
-    // db.createCollection("battle_data_with_2_col")
-    // db.battle_data_with_2_col.insert({start_time: '2021-5-10 17:10:30', end_time: '2021-5-10 17:10:30', rule: 'Stock', max_stock: 3, player: 'KIRBY', opponent: 'KIRBY', stock: 3, stock_diff: 2, order: 1, power: 8000000, power_diff: 300000})
+    // db.createCollection("battle_data_col")
+    /*
+    {
+        "_id": {
+            "$oid": "{}"
+        },
+        "start_time": "2021-05-28T16:51:45.000000000+09:00",
+        "end_time": "2021-05-28T16:58:30.000000000+09:00",
+        "player_count": 2,
+        "rule_name": "Stock",
+
+        "max_time": [7, 0],
+        "max_stock_list": [3, 3],
+        "max_hp_list": [0, 0],
+        
+        "chara_list": ["KIRBY", "KIRBY"],
+        "group_list": ["RED", "BLUE"],
+        "stock_list": [3, 0],
+        "order_list": [2, 1],
+        "power_list": [10000000, 0]
+    }
+    */
     pub fn insert_with_2(&mut self, data: &SmashbrosData) -> Option<String> {
         let database = self.db_client.database("smabrog-db");
-        let collection_ref = database.collection("battle_data_with_2_col").clone();
+        let collection_ref = database.collection("battle_data_col").clone();
         let serialized_data = bson::to_bson(data).unwrap();
         let data_document = serialized_data.as_document().unwrap();
 
@@ -161,7 +181,7 @@ impl BattleHistory {
     /// battle_data コレクションから戦歴情報を 直近10件 取得
     pub fn find_with_2_limit_10(&self) -> Option<Vec<SmashbrosData>> {
         let database = self.db_client.database("smabrog-db");
-        let collection_ref = database.collection("battle_data_with_2_col").clone();
+        let collection_ref = database.collection("battle_data_col").clone();
 
         // mongodb のポインタ的なものをもらう
         let mut cursor: Cursor = match async_std::task::block_on(async move {
@@ -178,13 +198,11 @@ impl BattleHistory {
         };
 
         // ポインタ的 から ドキュメントを取得して、コンテナに格納されたのを積む
-        use async_std::stream;
         use async_std::prelude::*;
         use async_std::task::block_on;
         let mut data_list: Vec<SmashbrosData> = Vec::new();
         while let Some(document) = block_on(async{ cursor.next().await }) {
             let data: SmashbrosData = bson::from_bson(bson::Bson::Document(document.unwrap())).unwrap();
-//            let data = serde_json::from_str::<SmashbrosData>(document.unwrap().as_str()).unwrap();
             data_list.push(data);
         }
         
@@ -217,8 +235,62 @@ pub static mut BATTLE_HISTORY: WrappedBattleHistory = WrappedBattleHistory {
 };
 
 
-// プレイヤーのグループの種類,色
-#[derive(Debug, Clone)]
+/// 値を推測して一番高いものを保持しておくためのクラス
+#[derive(Clone, Debug)]
+pub struct ValueGuesser<K: Clone + Eq + std::hash::Hash> {
+    value_count_list: HashMap<K, i32>,
+    max_value: K,
+    max_count: i32,
+    max_border: i32,
+}
+impl<K: std::hash::Hash + Clone + Eq> ValueGuesser<K> {
+    pub fn new(value: K) -> Self {
+        Self {
+            value_count_list: HashMap::new(),
+            max_value: value.clone(),
+            max_count: 0,
+            max_border: 5,
+        }
+    }
+
+    /// 値が決定したかどうか
+    pub fn is_decided(&self) -> bool {
+        self.max_border <= self.max_count
+    }
+
+    /// 一番出現回数が高い Value を返す
+    /// using clone.
+    pub fn get(&self) -> K {
+        self.max_value.clone()
+    }
+
+    /// 値を強制する
+    /// using clone.
+    pub fn set(&mut self, value: K) {
+        self.max_value = value.clone();
+        self.max_count = self.max_border;
+    }
+
+    /// 値を推測する
+    /// using clone.
+    pub fn guess(&mut self, value: &K) {
+        if self.is_decided() {
+            return;
+        }
+
+        *self.value_count_list.entry(value.clone()).or_insert(0) += 1;
+
+        if self.max_count < self.value_count_list[value] {
+            self.max_value = value.clone();
+            self.max_count = self.value_count_list[value];
+        }
+    }
+}
+
+
+/// プレイヤーのグループの種類,色
+/// キャラクターの色数 == グループの数 == 8
+#[derive(Debug, Clone, PartialEq, Eq, std::hash::Hash)]
 pub enum PlayerGroup {
     Unknown, Red, Blue, Green, Yellow,
 }
@@ -235,10 +307,13 @@ impl std::str::FromStr for PlayerGroup {
         }
     }
 }
-// ルール
-#[derive(Debug, Clone)]
+/// ルール
+/// Time   : 時間制限あり[2,2:30,3], ストック数は上限なしの昇順, HPはバースト毎に0%に初期化
+/// Stock  : 時間制限あり[3,4,5,6,7], ストック数は上限[1,2,3]の降順, HPはバースト毎に0%に初期化
+/// Stamina: 時間制限あり[3,4,5,6,7], ストック数は上限[1,2,3]の降順, HPは上限[100,150,200,250,300]の降順
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BattleRule {
-    Unknown, Time, Stock, HealthPoint,
+    Unknown, Time, Stock, Stamina, 
 }
 impl std::str::FromStr for BattleRule {
     type Err = ();
@@ -247,7 +322,7 @@ impl std::str::FromStr for BattleRule {
             "Unknown" => Ok(Self::Unknown),
             "Time" => Ok(Self::Time),
             "Stock" => Ok(Self::Stock),
-            "HealthPoint" => Ok(Self::HealthPoint),
+            "Stamina" => Ok(Self::Stamina),
             _ => Ok(Self::Unknown),
         }
     }
@@ -272,6 +347,13 @@ pub trait SmashbrosDataTrait {
     /// ルールの取得
     fn get_rule(&self) -> BattleRule;
 
+    /// 時間制限の取得
+    fn get_max_time(&self) -> std::time::Duration;
+    /// プレイヤーの最大ストック数の取得
+    fn get_max_stock(&self, player_number: i32) -> i32;
+    /// プレイヤーの最大HPの取得
+    fn get_max_hp(&self, player_number: i32) -> i32;
+
     /// プレイヤーのキャラクターの取得
     fn get_character(&self, player_number: i32) -> String;
     /// プレイヤーのグループの取得
@@ -282,9 +364,6 @@ pub trait SmashbrosDataTrait {
     fn get_order(&self, player_number: i32) -> i32;
     /// プレイヤーの順位の取得
     fn get_power(&self, player_number: i32) -> i32;
-
-    /// プレイヤーの最大ストック数の取得
-    fn get_max_stock(&self, player_number: i32) -> i32;
 
     // gettter
     /// DB key
@@ -303,6 +382,13 @@ pub trait SmashbrosDataTrait {
     /// ルールの設定
     fn set_rule(&mut self, value: BattleRule);
 
+    /// 時間制限の設定
+    fn set_max_time(&mut self, value: std::time::Duration);
+    /// プレイヤーの最大ストック数の設定
+    fn set_max_stock(&mut self, player_number: i32, value: i32);
+    /// プレイヤーの最大HPの設定
+    fn set_max_hp(&mut self, player_number: i32, value: i32);
+
     /// プレイヤーのキャラクターの設定
     fn set_character(&mut self, player_number: i32, value: String);
     /// プレイヤーのグループの設定
@@ -314,14 +400,21 @@ pub trait SmashbrosDataTrait {
     /// プレイヤーの順位の設定
     fn set_power(&mut self, player_number: i32, value: i32);
 
-    /// プレイヤーの最大ストック数の設定
-    fn set_max_stock(&mut self, player_number: i32, value: i32);
-
     // is系
     /// 試合中かどうか
     fn is_playing_battle(&self) -> bool;
     /// 試合後かどうか
     fn is_finished_battle(&self) -> bool;
+
+    // ルールは確定しているか
+    fn is_decided_rule(&self) -> bool;
+
+    /// 時間制限は確定しているか
+    fn is_decided_max_time(&self) -> bool;
+    /// プレイヤーの最大ストックは確定しているか
+    fn is_decided_max_stock(&self, player_number: i32) -> bool;
+    /// プレイヤーの最大HPは確定しているか
+    fn is_decided_max_hp(&self, player_number: i32) -> bool;
 
     /// プレイヤーが使用しているキャラクターは確定しているか
     fn is_decided_character_name(&self, player_number: i32) -> bool;
@@ -341,20 +434,26 @@ pub trait SmashbrosDataTrait {
 enum SmashbrosDataField {
     Id(&'static str),
     StartTime(&'static str), EndTime(&'static str),
-    Rule(&'static str),
-    Player(&'static str), Opponent(&'static str),
-    Stock(&'static str), StockDiff(&'static str), Order(&'static str), Power(&'static str), PowerDiff(&'static str),
-    MaxStock(&'static str),
+    PlayerCount(&'static str), RuleName(&'static str),
+    MaxTime(&'static str), MaxStockList(&'static str), MaxHpList(&'static str),
+    CharaList(&'static str),
+    GroupList(&'static str),
+    StockList(&'static str),
+    OrderList(&'static str),
+    PowerList(&'static str)
 }
 impl SmashbrosDataField {
     fn name(&self) -> &'static str {
         match *self {
             Self::Id(name) |
             Self::StartTime(name) | Self::EndTime(name) |
-            Self::Rule(name) |
-            Self::Player(name) | Self::Opponent(name) |
-            Self::Stock(name) | Self::StockDiff(name) | Self::Order(name) | Self::Power(name) | Self::PowerDiff(name) |
-            Self::MaxStock(name) => {
+            Self::PlayerCount(name) | Self::RuleName(name) |
+            Self::MaxTime(name) | Self::MaxStockList(name) | Self::MaxHpList(name) |
+            Self::CharaList(name) |
+            Self::GroupList(name) |
+            Self::StockList(name) |
+            Self::OrderList(name) |
+            Self::PowerList(name) => {
                 name
             },
         }
@@ -368,7 +467,6 @@ impl<'de> Deserialize<'de> for SmashbrosDataField {
     }
 }
 /// DB コンテナ(フィールド名用)
-use serde::de;
 #[derive(Debug)]
 struct SmashbrosDataFieldVisitor;
 impl<'de> Visitor<'de> for SmashbrosDataFieldVisitor {
@@ -405,11 +503,7 @@ impl<'de> Visitor<'de> for SmashbrosDataVisitor {
         use std::str::FromStr;
 
         let mut data = SmashbrosData::default();
-        data.initialize_battle(2);
-        data.set_saved_time(Some(std::time::Instant::now()));
-
-        let mut stock_diff = 0;
-        let mut power_diff = 0;
+        data.initialize_data();
 
         // ?: データ値が格納されてないのと、DBにフィールドがそもそもなかったのとは別なので、一度開いて Some で閉じる
         while let Some(key) = map.next_key::<SmashbrosDataField>()? {
@@ -419,48 +513,67 @@ impl<'de> Visitor<'de> for SmashbrosDataVisitor {
                     let value: HashMap<String, String> = map.next_value::<HashMap<String, String>>()?;
                     data.set_id(Some( value["$oid"].clone() ));
                 },
+
                 SmashbrosDataField::StartTime(_) => {
                     data.set_start_time(Some( DateTime::<chrono::Local>::from_str(&map.next_value::<String>()?).unwrap() ));
                 },
                 SmashbrosDataField::EndTime(_) => {
                     data.set_end_time(Some( DateTime::<chrono::Local>::from_str(&map.next_value::<String>()?).unwrap() ));
                 },
-                SmashbrosDataField::Rule(_) => {
-                    data.set_rule(BattleRule::from_str( &map.next_value::<String>()? ).unwrap())
+
+                SmashbrosDataField::PlayerCount(_) => {
+                    data.initialize_battle( map.next_value::<i32>()? );
+                    data.set_saved_time(Some( std::time::Instant::now() ));
+                },
+                SmashbrosDataField::RuleName(_) => {
+                    data.set_rule(BattleRule::from_str( &map.next_value::<String>()? ).unwrap());
                 },
 
-                SmashbrosDataField::Player(_) => {
-                    data.set_character(0, map.next_value::<String>()?);
+                SmashbrosDataField::MaxTime(_) => {
+                    use std::ops::Add;
+                    let times = map.next_value::<Vec<i32>>()?;
+                    let time = std::time::Duration::from_secs((times[0] * 60) as u64)
+                        .add(std::time::Duration::from_secs(times[1] as u64));
+                    data.set_max_time(time);
                 },
-                SmashbrosDataField::Opponent(_) => {
-                    data.set_character(1, map.next_value::<String>()?);
+                SmashbrosDataField::MaxStockList(_) => {
+                    for (player_number, max_stock) in map.next_value::<Vec<i32>>()?.iter().enumerate() {
+                        data.set_max_stock(player_number as i32, *max_stock);
+                    }
                 },
-                SmashbrosDataField::Stock(_) => {
-                    data.set_stock(0, map.next_value::<i32>()?);
+                SmashbrosDataField::MaxHpList(_) => {
+                    for (player_number, max_hp) in map.next_value::<Vec<i32>>()?.iter().enumerate() {
+                        data.set_max_hp(player_number as i32, *max_hp);
+                    }
                 },
-                SmashbrosDataField::StockDiff(_) => {
-                    stock_diff = map.next_value::<i32>()?;
+
+                SmashbrosDataField::CharaList(_) => {
+                    for (player_number, chara_name) in map.next_value::<Vec<String>>()?.iter().enumerate() {
+                        data.set_character(player_number as i32, chara_name.clone());
+                    }
                 },
-                SmashbrosDataField::Order(_) => {
-                    data.set_order(0, map.next_value::<i32>()?);
+                SmashbrosDataField::GroupList(_) => {
+                    for (player_number, group_name) in map.next_value::<Vec<String>>()?.iter().enumerate() {
+                        data.set_group(player_number as i32, PlayerGroup::from_str( &group_name ).unwrap());
+                    }
                 },
-                SmashbrosDataField::Power(_) => {
-                    data.set_power(0, map.next_value::<i32>()?);
+                SmashbrosDataField::StockList(_) => {
+                    for (player_number, stock) in map.next_value::<Vec<i32>>()?.iter().enumerate() {
+                        data.set_stock(player_number as i32, *stock);
+                    }
                 },
-                SmashbrosDataField::PowerDiff(_) => {
-                    power_diff = map.next_value::<i32>()?;
+                SmashbrosDataField::OrderList(_) => {
+                    for (player_number, order) in map.next_value::<Vec<i32>>()?.iter().enumerate() {
+                        data.set_order(player_number as i32, *order);
+                    }
                 },
-                SmashbrosDataField::MaxStock(_) => {
-                    let max_stock = map.next_value::<i32>()?;
-                    data.set_max_stock(0, max_stock);
-                    data.set_max_stock(1, max_stock);
+                SmashbrosDataField::PowerList(_) => {
+                    for (player_number, power) in map.next_value::<Vec<i32>>()?.iter().enumerate() {
+                        data.set_power(player_number as i32, *power);
+                    }
                 }
             }
         }
-
-        data.set_stock(1, data.get_stock(0) - stock_diff);
-        data.set_order(1, data.get_player_count() - data.get_order(0) + 1);
-        data.set_power(1, data.get_power(0) - power_diff);
 
         Ok(data)
     }
@@ -480,14 +593,17 @@ pub struct SmashbrosData {
     player_count: i32,
     rule_name: BattleRule,
 
-    // プレイヤーの数だけ存在するデータ
-    character_name_list: Vec<(String, f32)>,
-    group_list: Vec<(PlayerGroup, f32)>,
-    stock_list: Vec<(i32, f32)>,
-    order_list: Vec<(i32, f32)>,
-    power_list: Vec<(i32, f32)>,
+    // ルール条件
+    max_time: Option<std::time::Duration>,
+    max_stock_list: Option<Vec<ValueGuesser<i32>>>,
+    max_hp_list: Option<Vec<ValueGuesser<i32>>>,
 
-    max_stock_list: Vec<i32>,
+    // プレイヤーの数だけ存在するデータ
+    chara_list: Vec<ValueGuesser<String>>,
+    group_list: Vec<ValueGuesser<PlayerGroup>>,
+    stock_list: Vec<ValueGuesser<i32>>,
+    order_list: Vec<ValueGuesser<i32>>,
+    power_list: Vec<ValueGuesser<i32>>,
 }
 impl Default for SmashbrosData {
     fn default() -> Self { Self::new() }
@@ -514,48 +630,66 @@ impl SmashbrosDataTrait for SmashbrosData {
     fn get_player_count(&self) -> i32 { self.player_count }
     fn get_rule(&self) -> BattleRule { self.rule_name.clone() }
 
+    fn get_max_time(&self) -> std::time::Duration {
+        self.max_time.unwrap_or(std::time::Duration::from_secs(0))
+    }
+    fn get_max_stock(&self, player_number: i32) -> i32 {
+        let max_stock_list = match &self.max_stock_list {
+            None => return -1,
+            Some(max_stock_list) => max_stock_list,
+        };
+        if max_stock_list.len() <= player_number as usize {
+            return -1;
+        }
+
+        max_stock_list[player_number as usize].get()
+    }
+    fn get_max_hp(&self, player_number: i32) -> i32 {
+        let max_hp_list = match &self.max_hp_list {
+            None => return -1,
+            Some(max_hp_list) => max_hp_list,
+        };
+        if max_hp_list.len() <= player_number as usize {
+            return -1;
+        }
+
+        max_hp_list[player_number as usize].get()
+    }
+
     fn get_character(&self, player_number: i32) -> String {
-        if self.character_name_list.len() < 2 {
+        if self.chara_list.len() <= player_number as usize {
             return Self::CHARACTER_NAME_UNKNOWN.to_string();
         }
 
-        self.character_name_list[player_number as usize].0.clone()
+        self.chara_list[player_number as usize].get()
     }
     fn get_group(&self, player_number: i32) -> PlayerGroup {
-        if self.character_name_list.len() < 2 {
+        if self.group_list.len() <= player_number as usize {
             return PlayerGroup::Unknown;
         }
 
-        self.group_list[player_number as usize].0.clone()
+        self.group_list[player_number as usize].get()
     }
     fn get_stock(&self, player_number: i32) -> i32 {
-        if self.character_name_list.len() < 2 {
+        if self.stock_list.len() <= player_number as usize {
             return -1;
         }
 
-        self.stock_list[player_number as usize].0
+        self.stock_list[player_number as usize].get()
     }
     fn get_order(&self, player_number: i32) -> i32 {
-        if self.character_name_list.len() < 2 {
+        if self.order_list.len() <= player_number as usize {
             return -1;
         }
 
-        self.order_list[player_number as usize].0
+        self.order_list[player_number as usize].get()
     }
     fn get_power(&self, player_number: i32) -> i32 {
-        if self.character_name_list.len() < 2 {
+        if self.power_list.len() <= player_number as usize {
             return -1;
         }
 
-        self.power_list[player_number as usize].0
-    }
-
-    fn get_max_stock(&self, player_number: i32) -> i32 {
-        if self.character_name_list.len() < 2 {
-            return -1;
-        }
-
-        self.max_stock_list[player_number as usize]
+        self.power_list[player_number as usize].get()
     }
 
     // setter
@@ -568,13 +702,15 @@ impl SmashbrosDataTrait for SmashbrosData {
     fn set_player_count(&mut self, value: i32) { self.player_count = value; }
     fn set_rule(&mut self, value: BattleRule) { self.rule_name = value; }
 
-    fn set_character(&mut self, player_number: i32, value: String) { self.character_name_list[player_number as usize].0 = value; }
-    fn set_group(&mut self, player_number: i32, value: PlayerGroup) { self.group_list[player_number as usize].0 = value; }
-    fn set_stock(&mut self, player_number: i32, value: i32) { self.stock_list[player_number as usize].0 = value; }
-    fn set_order(&mut self, player_number: i32, value: i32) { self.order_list[player_number as usize].0 = value; }
-    fn set_power(&mut self, player_number: i32, value: i32) { self.power_list[player_number as usize].0 = value; }
-    fn set_max_stock(&mut self, player_number: i32, value: i32) { self.max_stock_list[player_number as usize] = value; }
+    fn set_max_time(&mut self, value: std::time::Duration) { self.max_time = Some(value) }
+    fn set_max_stock(&mut self, player_number: i32, value: i32) { (*self.max_stock_list.as_mut().unwrap())[player_number as usize].set(value); }
+    fn set_max_hp(&mut self, player_number: i32, value: i32) { (*self.max_hp_list.as_mut().unwrap())[player_number as usize].set(value); }
 
+    fn set_character(&mut self, player_number: i32, value: String) { self.chara_list[player_number as usize].set(value); }
+    fn set_group(&mut self, player_number: i32, value: PlayerGroup) { self.group_list[player_number as usize].set(value); }
+    fn set_stock(&mut self, player_number: i32, value: i32) { self.stock_list[player_number as usize].set(value); }
+    fn set_order(&mut self, player_number: i32, value: i32) { self.order_list[player_number as usize].set(value); }
+    fn set_power(&mut self, player_number: i32, value: i32) { self.power_list[player_number as usize].set(value); }
 
     // is_{hoge}
     fn is_playing_battle(&self) -> bool {
@@ -606,19 +742,34 @@ impl SmashbrosDataTrait for SmashbrosData {
 
         end_time <= chrono::Local::now()
     }
+
+    fn is_decided_rule(&self) -> bool {
+        self.rule_name != BattleRule::Unknown
+    }
+
+    fn is_decided_max_time(&self) -> bool {
+        self.max_time.is_some()
+    }
+    fn is_decided_max_stock(&self, player_number: i32) -> bool {
+        self.max_stock_list.is_some() && -1 != self.as_ref().get_max_stock(player_number)
+    }
+    fn is_decided_max_hp(&self, player_number: i32) -> bool {
+        self.max_hp_list.is_some() && -1 != self.as_ref().get_max_hp(player_number)
+    }
+
     fn is_decided_character_name(&self, player_number: i32) -> bool {
         // 名前の一致度が 100% ならそれ以上は変更し得ない
-        !self.character_name_list.is_empty() && 1.0 <= self.character_name_list[player_number as usize].1
+        !self.chara_list.is_empty() && self.chara_list[player_number as usize].is_decided()
     }
     fn is_decided_stock(&self, player_number: i32) -> bool {
         // ストック数が 1 の時はそれ以上減ることは仕様上ないはずなので skip
-        !self.stock_list.is_empty() && 1 == self.stock_list[player_number as usize].0
+        !self.stock_list.is_empty() && 1 == self.stock_list[player_number as usize].get()
     }
     fn is_decided_order(&self, player_number: i32) -> bool {
-        !self.order_list.is_empty() && 1.0 <= self.order_list[player_number as usize].1
+        !self.order_list.is_empty() && self.order_list[player_number as usize].is_decided()
     }
     fn is_decided_power(&self, player_number: i32) -> bool {
-        !self.power_list.is_empty() && 1.0 <= self.power_list[player_number as usize].1
+        !self.power_list.is_empty() && self.power_list[player_number as usize].is_decided()
     }
 
     // as系
@@ -633,15 +784,26 @@ impl Serialize for SmashbrosData {
         let mut state = serializer.serialize_struct("SmashbrosData", Self::FIELDS.len())?;
         state.serialize_field( "start_time", &format!( "{:?}", self.get_start_time().unwrap_or(chrono::Local::now())) )?;
         state.serialize_field( "end_time", &format!( "{:?}", self.get_end_time().unwrap_or(chrono::Local::now()) ) )?;
-        state.serialize_field( "rule", &format!("{:?}", self.get_rule()) )?;
-        state.serialize_field( "max_stock", &self.get_max_stock(0) )?;
-        state.serialize_field( "player", &self.get_character(0) )?;
-        state.serialize_field( "opponent", &self.get_character(1) )?;
-        state.serialize_field( "stock", &self.get_stock(0) )?;
-        state.serialize_field( "stock_diff", &(self.get_stock(0) - self.get_stock(1)) )?;
-        state.serialize_field( "order", &self.get_order(0) )?;
-        state.serialize_field( "power", &self.get_power(0) )?;
-        state.serialize_field( "power_diff", &(self.get_power(0) - self.get_power(1)) )?;
+
+        state.serialize_field( "player_count", &self.get_player_count() )?;
+        state.serialize_field( "rule_name", &format!("{:?}", self.get_rule()) )?;
+
+        let times = self.get_max_time();
+        state.serialize_field( "max_time", &vec![times.as_secs() as i32 / 60, times.as_secs() as i32 % 60] )?;
+        state.serialize_field( "max_stock_list",
+            &self.max_stock_list.as_ref().unwrap_or(&vec![ValueGuesser::new(-1)])
+                .iter().map(|value| value.get() ).collect::<Vec<i32>>()
+        )?;
+        state.serialize_field( "max_hp_list",
+            &self.max_hp_list.as_ref().unwrap_or(&vec![ValueGuesser::new(-1)])
+                .iter().map(|value| value.get() ).collect::<Vec<i32>>()
+        )?;
+
+        state.serialize_field( "chara_list", &self.chara_list.iter().map(|value| value.get().to_string() ).collect::<Vec<String>>() )?;
+        state.serialize_field( "group_list", &self.group_list.iter().map(|value| format!("{:?}", value.get()) ).collect::<Vec<String>>() )?;
+        state.serialize_field( "stock_list", &self.stock_list.iter().map(|value| value.get() ).collect::<Vec<i32>>() )?;
+        state.serialize_field( "order_list", &self.order_list.iter().map(|value| value.get() ).collect::<Vec<i32>>() )?;
+        state.serialize_field( "power_list", &self.power_list.iter().map(|value| value.get() ).collect::<Vec<i32>>() )?;
 
         state.end()
     }
@@ -658,19 +820,27 @@ impl SmashbrosData {
     const FIELD_NAMES: &'static [&'static str] = &[
         "_id",
         "start_time", "end_time",
-        "rule",
-        "player", "opponent",
-        "stock", "stock_diff", "order", "power", "power_diff",
-        "max_stock"
+        "player_count",
+        "rule_name",
+        "max_time", "max_stock_list", "max_hp_list",
+        "chara_list",
+        "group_list",
+        "stock_list",
+        "order_list",
+        "power_list"
     ];
     // db に突っ込むときのフィールド名
-    const FIELDS: [SmashbrosDataField; 12] = [
+    const FIELDS: [SmashbrosDataField; 13] = [
         SmashbrosDataField::Id{ 0:"_id" },
         SmashbrosDataField::StartTime{ 0:"start_time" }, SmashbrosDataField::EndTime{ 0:"end_time" },
-        SmashbrosDataField::Rule{ 0:"rule" },
-        SmashbrosDataField::Player{ 0:"player" }, SmashbrosDataField::Opponent{ 0:"opponent" },
-        SmashbrosDataField::Stock{ 0:"stock" }, SmashbrosDataField::StockDiff{ 0:"stock_diff" }, SmashbrosDataField::Order{ 0:"order" }, SmashbrosDataField::Power{ 0:"power" }, SmashbrosDataField::PowerDiff{ 0:"power_diff" },
-        SmashbrosDataField::MaxStock{ 0:"max_stock" },
+        SmashbrosDataField::PlayerCount{ 0: "player_count" },
+        SmashbrosDataField::RuleName{ 0: "rule_name" },
+        SmashbrosDataField::MaxTime{ 0: "max_time" }, SmashbrosDataField::MaxStockList{ 0: "max_stock_list" }, SmashbrosDataField::MaxHpList{ 0: "max_hp_list" },
+        SmashbrosDataField::CharaList{ 0: "chara_list" },
+        SmashbrosDataField::GroupList{ 0: "group_list" },
+        SmashbrosDataField::StockList{ 0: "stock_list" },
+        SmashbrosDataField::OrderList{ 0: "order_list" },
+        SmashbrosDataField::PowerList{ 0: "power_list" }
     ];
     // キャラクター名が不明時の文字列
     const CHARACTER_NAME_UNKNOWN: &'static str = "unknown";
@@ -680,50 +850,60 @@ impl SmashbrosData {
             db_collection_id: None,
             saved_time: None,
 
-            player_count: 0,
-            rule_name: BattleRule::Unknown,
             start_time: None,
             end_time: None,
 
-            character_name_list: vec![("".to_string(), 0.0)],
-            group_list: vec![],
-            stock_list: vec![],
-            order_list: vec![],
-            power_list: vec![],
+            player_count: 0,
+            rule_name: BattleRule::Unknown,
 
-            max_stock_list: vec![],
+            max_time: None,
+            max_stock_list: None,
+            max_hp_list: None,
+
+            chara_list: vec![ValueGuesser::new("".to_string())],
+            group_list: vec![ValueGuesser::new(PlayerGroup::Unknown)],
+            stock_list: vec![ValueGuesser::new(-1)],
+            order_list: vec![ValueGuesser::new(-1)],
+            power_list: vec![ValueGuesser::new(-1)],
         }
     }
 
     /// データの初期化
     /// @return bool false:初期化せず true:初期化済み
     fn initialize_data(&mut self) -> bool {
-        if SmashbrosData::CHARACTER_NAME_UNKNOWN == self.character_name_list[0].0 {
-            // 初期値代入してあったら処理しない(全部同時にされるので character_name_list だけで比較)
+        if SmashbrosData::CHARACTER_NAME_UNKNOWN == self.chara_list[0].get() {
+            // 初期値代入してあったら処理しない(全部同時にされるので chara_list だけで比較)
             return false;
         }
 
         // 削除
         self.start_time = None;
         self.end_time = None;
+        
+        self.rule_name = BattleRule::Unknown;
+        self.max_time = None;
 
-        self.character_name_list.clear();
+        self.chara_list.clear();
         self.group_list.clear();
         self.stock_list.clear();
         self.order_list.clear();
         self.power_list.clear();
-        self.max_stock_list.clear();
 
         // 削除も非同期に要素が参照されうるので確保だけは適当にしとく
-        for _ in 0..4 {
-            self.character_name_list.push( ("".to_string(), 0.0 ) );
-            self.group_list.push( (PlayerGroup::Unknown, 0.0) );
-            self.stock_list.push( (-1, 0.0) );
-            self.order_list.push( (-1, 0.0) );
-            self.power_list.push( (-1, 0.0) );
+        let mut max_stock_list: Vec<ValueGuesser<i32>> = Vec::new();
+        let mut max_hp_list: Vec<ValueGuesser<i32>> = Vec::new();
+        for _ in 0..8 {
+            max_stock_list.push( ValueGuesser::new(-1) );
+            max_hp_list.push( ValueGuesser::new(-1) );
 
-            self.max_stock_list.push( -1 );
+            self.chara_list.push( ValueGuesser::new("".to_string()) );
+            self.group_list.push( ValueGuesser::new(PlayerGroup::Unknown) );
+            self.stock_list.push( ValueGuesser::new(-1) );
+            self.order_list.push( ValueGuesser::new(-1) );
+            self.power_list.push( ValueGuesser::new(-1) );
         }
+        self.max_stock_list = Some( max_stock_list );
+        self.max_hp_list = Some( max_hp_list );
 
         return true;
     }
@@ -739,26 +919,31 @@ impl SmashbrosData {
         self.player_count = player_count;
 
         // 初期値代入
-        self.character_name_list.clear();
+        let mut max_stock_list: Vec<ValueGuesser<i32>> = Vec::new();
+        let mut max_hp_list: Vec<ValueGuesser<i32>> = Vec::new();
+        self.chara_list.clear();
         self.group_list.clear();
         self.stock_list.clear();
         self.order_list.clear();
         self.power_list.clear();
-        self.max_stock_list.clear();
-        for player_number in 0..self.player_count {
-            self.character_name_list.push( (SmashbrosData::CHARACTER_NAME_UNKNOWN.to_string(), 0.0 ) );
-            self.group_list.push( (PlayerGroup::Unknown, 0.0) );
-            self.stock_list.push( (-1, 0.0) );
-            self.order_list.push( (-1, 0.0) );
-            self.power_list.push( (-1, 0.0) );
+        for _ in 0..self.player_count {
+            max_stock_list.push( ValueGuesser::new(-1) );
+            max_hp_list.push( ValueGuesser::new(-1) );
 
-            self.max_stock_list.push( -1 );
+            self.chara_list.push( ValueGuesser::new(SmashbrosData::CHARACTER_NAME_UNKNOWN.to_string()) );
+            self.group_list.push( ValueGuesser::new(PlayerGroup::Unknown) );
+            self.stock_list.push( ValueGuesser::new(-1) );
+            self.order_list.push( ValueGuesser::new(-1) );
+            self.power_list.push( ValueGuesser::new(-1) );
         }
+        self.max_stock_list = Some( max_stock_list );
+        self.max_hp_list = Some( max_hp_list );
+
         match player_count {
             2 => {
                 // 1 on 1 の時はチームカラーが固定
-                self.group_list[0] = (PlayerGroup::Red, 1.0);
-                self.group_list[1] = (PlayerGroup::Blue, 1.0);
+                self.group_list[0].set(PlayerGroup::Red);
+                self.group_list[1].set(PlayerGroup::Blue);
             },
             _ => ()
         };
@@ -796,128 +981,106 @@ impl SmashbrosData {
         self.saved_time = Some(std::time::Instant::now());
     }
 
+    /// 最大ストック数の推測
+    pub fn guess_max_stock(&mut self, player_number: i32, maybe_stock: i32) {
+        if self.is_decided_max_stock(player_number) {
+            return;
+        }
+
+        (*self.max_stock_list.as_mut().unwrap())[player_number as usize].guess(&maybe_stock);
+
+        println!("max stock {}p: {}? => {:?}", player_number+1, maybe_stock, self.get_max_stock(player_number));
+    }
+    /// 最大ストック数は確定しているか
+    pub fn all_decided_max_stock(&self) -> bool {
+        (0..self.player_count).collect::<Vec<i32>>().iter().all( |&player_number| self.is_decided_max_stock(player_number) )
+    }
+    /// 最大HPの推測
+    pub fn guess_max_hp(&mut self, player_number: i32, maybe_hp: i32) {
+        if self.is_decided_max_stock(player_number) {
+            return;
+        }
+
+        (*self.max_hp_list.as_mut().unwrap())[player_number as usize].guess(&maybe_hp);
+
+        println!("max hp {}p: {}? => {:?}", player_number+1, maybe_hp, self.get_max_hp(player_number));
+    }
+    /// 最大HPは確定しているか
+    pub fn all_decided_max_hp(&self) -> bool {
+        (0..self.player_count).collect::<Vec<i32>>().iter().all( |&player_number| self.is_decided_max_hp(player_number) )
+    }
+
     /// プレイヤーが使用しているキャラクターの設定
     pub fn guess_character_name(&mut self, player_number: i32, maybe_character_name: String) {
-        if 1.0 <= self.character_name_list[player_number as usize].1 {
+        if self.is_decided_character_name(player_number) {
             // 一致度が 100% だと比較しない
             return;
         }
         
         if unsafe{SMASHBROS_RESOURCE.get()}.character_list.contains_key(&maybe_character_name) {
             // O(1)
-            self.character_name_list[player_number as usize] = ( maybe_character_name.clone(), 1.0 );
+            self.set_character(player_number, maybe_character_name.clone());
         } else {
-            // O(1+N)
-            let mut max_ratio = self.character_name_list[player_number as usize].1;
+            // リソースから一番一致率が高い名前を設定する
+            let mut max_ratio = 0.0;
             let mut matcher = SequenceMatcher::new("", "");
+            let mut chara_name = Self::CHARACTER_NAME_UNKNOWN;
             for (character_name, _) in unsafe{SMASHBROS_RESOURCE.get()}.character_list.iter() {
                 matcher.set_seqs(character_name, &maybe_character_name);
                 if max_ratio < matcher.ratio() {
                     max_ratio = matcher.ratio();
-                    self.character_name_list[player_number as usize] = ( character_name.clone(), max_ratio );
+                    chara_name = &character_name;
                     if 1.0 <= max_ratio {
                         break;
                     }
-                } else if 0.87 < matcher.ratio() && character_name == &self.character_name_list[player_number as usize].0 {
-                    // 同じ名前が渡された場合,僅かにそのキャラ名の一致度を上げる
-                    // 5% 上げると 0.87 以上が 3 回ほどで 100% 以上になる
-                    self.character_name_list[player_number as usize].1 *= 1.05;
-                    break;
                 }
+            }
+            if chara_name != Self::CHARACTER_NAME_UNKNOWN {
+                self.chara_list[player_number as usize].guess(&chara_name.to_string());
             }
         }
 
-        println!("chara {}p: \"{}\"? => {:?}", player_number+1, maybe_character_name, self.character_name_list[player_number as usize]);
+        println!("chara {}p: \"{}\"? => {:?}", player_number+1, maybe_character_name, self.get_character(player_number));
     }
     /// 全員分が使用しているキャラクターは確定しているか
     pub fn all_decided_character_name(&self) -> bool {
         (0..self.player_count).collect::<Vec<i32>>().iter().all( |&player_number| self.is_decided_character_name(player_number) )
     }
 
-    /// プレイヤーのストックの設定
-    pub fn guess_stock(&mut self, player_number: i32, stock: i32) {
-        if self.stock_list[player_number as usize].0 == stock {
+    /// プレイヤーのストックの推測
+    pub fn guess_stock(&mut self, player_number: i32, maybe_stock: i32) {
+        if self.stock_list[player_number as usize].get() == maybe_stock {
             return;
         }
 
-        if -1 == self.stock_list[player_number as usize].0 {
+        if !self.stock_list[player_number as usize].is_decided() {
             // 初回代入
-            self.stock_list[player_number as usize] = ( stock, 1.0 );
-            if -1 == self.max_stock_list[player_number as usize] {
-                self.max_stock_list[player_number as usize] = stock;
-                if self.max_stock_list.iter().all(|&stock| 0 < stock) {
-                    // 全員のストック数が確定すると最大値を推測する
-                    if let Some(&maybe_max_stock) = self.max_stock_list.iter().max() {
-                        self.max_stock_list.iter_mut().for_each(|max_stock| *max_stock = maybe_max_stock);
-                        println!("rule(stock): {}", maybe_max_stock);
-                    }
-                }
-            }
+            self.stock_list[player_number as usize].guess(&maybe_stock);
         }
 
-        // 出鱈目な数値が来ると確定度合いを下げる (0未満 or 現在よりストックが増えた状態)
-        if stock < 0 || self.stock_list[player_number as usize].0 < stock {
-            // 10% 未満はもう計算しない
-            if 0.1 < self.stock_list[player_number as usize].1 {
-                self.stock_list[player_number as usize].1 /= 2.0;
-            }
-        } else if stock == self.stock_list[player_number as usize].0 - 1 {
-            // ストックはデクリメントしかされない保証
-            self.stock_list[player_number as usize].0 = stock;
-        }
-
-        println!("stock {}p: {}? => {:?}", player_number+1, stock, self.stock_list[player_number as usize]);
+        println!("stock {}p: {}? => {:?}", player_number+1, maybe_stock, self.get_stock(player_number));
     }
     /// 全員分のストックは確定しているか
     pub fn all_decided_stock(&self) -> bool {
         (0..self.player_count).collect::<Vec<i32>>().iter().all( |&player_number| self.is_decided_stock(player_number) )
     }
 
-    /// プレイヤーの順位の設定
+    /// プレイヤーの順位の推測
     pub fn guess_order(&mut self, player_number: i32, maybe_order: i32) {
         if self.is_decided_order(player_number) {
             return;
         }
-        
-        // ストック数と矛盾がなければ確定
-        // [プレイヤー数 - player_numberより少ないストックを持つプレイヤー数] と order を比較
-        let player_stock = self.stock_list[player_number as usize].0;
-        let under_order_player_count = self.player_count - self.stock_list.iter().filter(|&stocks| player_stock > stocks.0 ).count() as i32;
-        if -1 == self.order_list[player_number as usize].0 {
-            if maybe_order == under_order_player_count {
-                self.order_list[player_number as usize] = ( maybe_order, 1.0 );
-            } else {
-                // [サドンデス or 同ストックのまま GameEnd]になってるか推測して、そうでなければ誤検出とする
-                if 2 <= self.stock_list.iter().filter(|&stocks| player_stock == stocks.0 ).count() {
-                    // サドンデスでの決着と予想して(ストック数の誤検出は考慮しない)、設定された順位を優先する
-                    self.order_list[player_number as usize] = ( maybe_order, 1.0 );
-                } else {
-                    self.order_list[player_number as usize] = ( maybe_order, 0.1 );
-                }
-            }
-        } else {
-            if maybe_order == under_order_player_count {
-                // 初回矛盾でも仏の名のもとに 3 回償えば許される()
-                self.order_list[player_number as usize].1 += 0.31;
-            } else {
-                self.order_list[player_number as usize].1 -= 0.31;
-            }
-        }
 
-        // 重複がなくてすべての順位が確定していると信用度を上げる
-        let sum = self.order_list.iter().fold(0, |acc, orders| acc + orders.0);
-        if sum == (1..self.player_count+1).collect::<Vec<i32>>().iter().fold(0, |acc, num| acc + num) {
-            self.order_list.iter_mut().for_each(|orders| (*orders).1 = 1.1 );
-        }
+        self.order_list[player_number as usize].guess(&maybe_order);
 
-        if 1.0 == self.order_list[player_number as usize].1 {
+        if self.order_list[player_number as usize].is_decided() {
             // 信頼性が高い順位は他のユーザーの順位をも確定させる
             match self.player_count {
                 2 => {
                     let other_player_number = self.player_count-1 - player_number;
                     let other_maybe_order = self.player_count - (maybe_order-1);
-                    self.order_list[other_player_number as usize] = ( other_maybe_order, 1.0 );
-                    println!("order {}p: {}? => {:?}", other_player_number+1, other_maybe_order, self.order_list[other_player_number as usize]);
+                    self.order_list[other_player_number as usize].set(other_maybe_order);
+                    println!( "order {}p: {}? => {:?}", other_player_number+1, other_maybe_order, self.get_order(other_player_number) );
                 },
                 _ => ()
             };
@@ -928,40 +1091,30 @@ impl SmashbrosData {
             match self.player_count {
                 2 => {
                     // 最下位は 0 にする
-                    let min_order = self.order_list.iter().map(|(stock, _)| stock).max().unwrap();
-                    let (min_order_player_number, _) = self.order_list.iter().enumerate().filter(|(_, (order, _))| order == min_order).last().unwrap();
-                    self.stock_list[min_order_player_number].0 = 0;
+                    let min_order = self.order_list.iter().map(|stock| stock.get()).max().unwrap();
+                    let (min_order_player_number, _) = self.order_list.iter().enumerate().filter(|(_, order)| order.get() == min_order).last().unwrap();
+                    self.stock_list[min_order_player_number].set(0);
                 },
                 _ => ()
             };
         }
 
-        println!("order {}p: {}? => {:?}", player_number+1, maybe_order, self.order_list[player_number as usize]);
+        println!( "order {}p: {}? => {:?}", player_number+1, maybe_order, self.get_order(player_number));
     }
     /// 全員分の順位は確定しているか
     pub fn all_decided_order(&self) -> bool {
         (0..self.player_count).collect::<Vec<i32>>().iter().all( |&player_number| self.is_decided_order(player_number) )
     }
 
-    /// プレイヤーの戦闘力の設定 (一桁以下は無視)
+    /// プレイヤーの戦闘力の推測 (一桁以下は無視)
     pub fn guess_power(&mut self, player_number: i32, maybe_power: i32) {
         if self.is_decided_power(player_number) || maybe_power < 10 {
             return;
         }
 
-        // 数値上昇のアニメーションの間の差分の数値も沢山送られてくる可能性があるので、
-        // 同じ数値だと一致率を上げて、違う数値だと下げる事を何度もする想定
-        // [初期値 or 代入されている戦闘力の 10% の誤差範囲]で変動
-        let power_diff = (self.power_list[player_number as usize].0 - maybe_power).abs();
-        if self.power_list[player_number as usize].0 == maybe_power && 0 <= self.power_list[player_number as usize].0 {
-            // 同じ戦闘力が 5 回でほぼ確定
-            self.power_list[player_number as usize].1 += 0.11;
-        } else if -1 == self.power_list[player_number as usize].0 || power_diff < self.power_list[player_number as usize].0 / 10 {
-            // 数値変動。一致率は変動する確率が高いので、初期値は 50%
-            self.power_list[player_number as usize] = ( maybe_power, 0.5 );
-        }
+        self.power_list[player_number as usize].guess(&maybe_power);
 
-        println!("power {}p: {}? => {:?}", player_number+1, maybe_power, self.power_list[player_number as usize]);
+        println!("power {}p: {}? => {:?}", player_number+1, maybe_power, self.get_power(player_number));
     }
     /// 全員分の戦闘力は確定しているか
     pub fn all_decided_power(&self) -> bool {

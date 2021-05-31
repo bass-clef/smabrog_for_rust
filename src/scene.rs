@@ -15,16 +15,6 @@ use crate::gui::{
 };
 
 
-macro_rules! measure {
-    ( $x:expr) => {{
-        let start = std::time::Instant::now();
-        let result = $x;
-        let end = start.elapsed();
-
-        println!("{}.{:03}s", end.as_secs(), end.subsec_nanos() / 1_000_000);
-    }};
-}
-
 #[derive(Copy, Clone)]
 pub enum ColorFormat {
     NONE = 0, GRAY = 1,
@@ -615,16 +605,22 @@ impl SceneTrait for MatchingScene {
 }
 
 /// キャラクターが大きく表示されてる画面
+/// save: キャラクター名, ルール名, 取れるなら[時間,ストック,HP]
 struct HamVsSpamScene {
-    scene_judgment: SceneJudgment,
+    vs_scene_judgment: SceneJudgment,
+    rule_time_scene_judgment: SceneJudgment,
     buffer: CaptureFrameStore,
 }
 impl Default for HamVsSpamScene {
     fn default() -> Self {
         Self {
-            scene_judgment: SceneJudgment::new(
+            vs_scene_judgment: SceneJudgment::new(
                 imgcodecs::imread("resource/vs_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
                 Some(imgcodecs::imread("resource/vs_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
+            ).unwrap(),
+            rule_time_scene_judgment: SceneJudgment::new(
+                imgcodecs::imread("resource/rule_time_stock_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
+                Some(imgcodecs::imread("resource/rule_time_stock_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
             ).unwrap(),
             buffer: CaptureFrameStore::default(),
         }
@@ -649,14 +645,15 @@ impl SceneTrait for HamVsSpamScene {
         }
 
         async_std::task::block_on(async {
-            self.scene_judgment.match_captured_scene(&capture_image).await;
+            self.vs_scene_judgment.match_captured_scene(&capture_image).await;
         });
 
-        if self.scene_judgment.is_near_match() {
+        if self.vs_scene_judgment.is_near_match() {
             imgcodecs::imwrite("ham_vs_spam.png", capture_image, &core::Vector::from(vec![]))?;
-            self.buffer.start_recoding_by_time(std::time::Duration::from_secs(1));
+            self.buffer.start_recoding_by_time(std::time::Duration::from_secs(3));
+            self.buffer.recoding_frame(capture_image)?;
         }
-        Ok(self.scene_judgment.is_near_match())
+        Ok(self.vs_scene_judgment.is_near_match())
     }
 
     fn to_scene(&self, _now_scene: SceneList) -> SceneList { SceneList::HamVsSpam }
@@ -666,9 +663,15 @@ impl SceneTrait for HamVsSpamScene {
 
     /// save: キャラクターの種類, ルール(time | stock), 時間
     fn detect_data(&mut self, smashbros_data: &mut SmashbrosData) -> opencv::Result<()> {
+        let rule_time_scene_judgment = &mut self.rule_time_scene_judgment;
         self.buffer.replay_frame(|frame| {
-            Self::captured_character_name(&frame, smashbros_data)
+            let ref_frame = &frame;
+            Ok(
+                Self::captured_rules(ref_frame, smashbros_data, rule_time_scene_judgment)?
+                & Self::captured_character_name(ref_frame, smashbros_data)?
+            )
         })?;
+
         Ok(())
     }
 
@@ -676,6 +679,10 @@ impl SceneTrait for HamVsSpamScene {
 }
 impl HamVsSpamScene {
     pub fn captured_character_name(capture_image: &core::Mat, smashbros_data: &mut SmashbrosData) -> opencv::Result<bool> {
+        if smashbros_data.all_decided_character_name() {
+            return Ok(true);
+        }
+
         use regex::Regex;
         let mut gray_capture_image = core::Mat::default();
         Utils::cvt_color_to(capture_image, &mut gray_capture_image, ColorFormat::GRAY as i32)?;
@@ -718,6 +725,109 @@ impl HamVsSpamScene {
         }
 
         Ok(smashbros_data.get_player_count() == skip_count)
+    }
+
+    pub fn captured_rules(capture_image: &core::Mat, smashbros_data: &mut SmashbrosData, rule_scene_judgment: &mut SceneJudgment) -> opencv::Result<bool> {
+        if smashbros_data.is_decided_rule() && smashbros_data.all_decided_max_stock() {
+            return Ok(true)
+        }
+
+        if !smashbros_data.is_decided_rule() {
+            // タイム制と検出(1on1: これがデフォルトで一番多いルール)
+            async_std::task::block_on(async {
+                rule_scene_judgment.match_captured_scene(capture_image).await;
+            });
+            if rule_scene_judgment.is_near_match() {
+                smashbros_data.set_rule(BattleRule::Stock)
+            }
+        }
+
+        // 各ルール条件の検出
+        let mut time_area: Option<core::Mat> = None;
+        let mut stock_area: Option<core::Mat> = None;
+        let mut hp_area: Option<core::Mat> = None;
+        match smashbros_data.get_rule() {
+            BattleRule::Time => {
+            },
+            BattleRule::Stock => {
+                // 制限時間の位置を切り取って
+                // time: xy:275x335, wh:9x12
+                time_area = Some(core::Mat::roi( capture_image, core::Rect {x:275, y:335, width:9, height:12}).unwrap() );
+                // stock: xy:359x335, wh:9x12
+                stock_area = Some(core::Mat::roi( capture_image, core::Rect {x:359, y:335, width:9, height:12}).unwrap() );
+            },
+            BattleRule::Stamina => {
+
+            },
+            _ => ()
+        }
+        if let Some(mut time_area) = time_area {
+            Self::captured_time(&mut time_area, smashbros_data)?;
+        }
+        if let Some(mut stock_area) = stock_area {
+            Self::captured_stock(&mut stock_area, smashbros_data)?;
+        }
+        if let Some(mut hp_area) = hp_area {
+            Self::captured_stamina(&mut hp_area, smashbros_data)?;
+        }
+
+        Ok(smashbros_data.is_decided_rule() && smashbros_data.is_decided_max_time() && smashbros_data.all_decided_max_stock())
+    }
+
+    pub fn captured_time(capture_image: &mut core::Mat, smashbros_data: &mut SmashbrosData) -> opencv::Result<()> {
+        let time = std::time::Duration::from_secs(
+            match Self::captured_convert_string(capture_image, r"\s*(\d)\s*") {
+                Ok(time) => time.parse::<u64>().unwrap_or(0) * 60,
+                Err(_) => 0,
+            }
+        );
+        println!("time {:?}", time);
+        smashbros_data.set_max_time(time);
+
+        Ok(())
+    }
+
+    pub fn captured_stock(capture_image: &mut core::Mat, smashbros_data: &mut SmashbrosData) -> opencv::Result<()> {
+        let stock: i32 = match Self::captured_convert_string(capture_image, r"\s*(\d)\s*") {
+            Ok(stock) => stock.parse().unwrap_or(-1),
+            Err(_) => 0,
+        };
+
+        for player_number in 0..smashbros_data.get_player_count() {
+            smashbros_data.guess_max_stock(player_number, stock);
+        }
+
+        Ok(())
+    }
+
+    pub fn captured_stamina(capture_image: &mut core::Mat, smashbros_data: &mut SmashbrosData) -> opencv::Result<()> {
+
+        Ok(())
+    }
+
+    /// capture_image から検出した文字列を regex_pattern で正規表現にかけて返す
+    pub fn captured_convert_string(capture_image: &mut core::Mat, regex_pattern: &str) -> opencv::Result<String> {
+        use regex::Regex;
+        // 近似白黒処理して
+        let mut gray_capture_image = core::Mat::default();
+        imgproc::threshold(capture_image, &mut gray_capture_image, 250.0, 255.0, imgproc::THRESH_BINARY)?;
+        let mut work_capture_image = core::Mat::default();
+        Utils::cvt_color_to(&gray_capture_image, &mut work_capture_image, ColorFormat::GRAY as i32)?;
+
+        // 輪郭捕捉して(数値の範囲)
+        let contour_image = Utils::trimming_any_rect(
+            capture_image, &work_capture_image, Some(1), Some(1.0), None, false, None)?;
+        let mut gray_contour_image = core::Mat::default();
+        Utils::cvt_color_to(&contour_image, &mut gray_contour_image, ColorFormat::RGB as i32)?;
+
+        // tesseract で文字(数値)を取得して, 余計な文字を排除
+        let text = &async_std::task::block_on(Utils::run_ocr_with_number(&gray_contour_image)).unwrap().to_string();
+        let re = Regex::new(regex_pattern).unwrap();
+        if let Some(caps) = re.captures( text ) {
+            return Ok( caps[1].to_string() );
+        }
+
+        Err(opencv::Error::new( 0, "not found anything. from captured_convert_string".to_string() ))
     }
 }
 
@@ -867,6 +977,7 @@ impl GamePlayingScene {
 
         if self.stock_black_scene_judgment.is_near_match() || self.stock_white_scene_judgment.is_near_match() {
             self.buffer.start_recoding_by_time(std::time::Duration::from_secs(1));
+            self.buffer.recoding_frame(capture_image)?;
         }
 
         Ok(false)
@@ -997,6 +1108,7 @@ impl Default for ResultScene {
                     imgcodecs::imread(&(path.clone() + "color.png"), imgcodecs::IMREAD_UNCHANGED).unwrap(),
                     Some(imgcodecs::imread(&(path + "mask.png"), imgcodecs::IMREAD_UNCHANGED).unwrap())
                 ).unwrap()
+                .set_border(0.99)
             );
         }
 
@@ -1093,7 +1205,8 @@ impl ResultScene {
         }
 
         if self.scene_judgment_list.iter().any( |scene_judgment| scene_judgment.is_near_match() ) {
-            self.buffer.start_recoding_by_time(std::time::Duration::from_secs(3));
+            self.buffer.start_recoding_by_time(std::time::Duration::from_secs(5));
+            self.buffer.recoding_frame(capture_image)?;
         }
 
         Ok(false)
@@ -1189,11 +1302,7 @@ pub struct SceneManager {
 impl Default for SceneManager {
     fn default() -> Self {
         Self {
-//            capture: Box::new(CaptureFromWindow::new("MonsterX U3.0R", "")),
-//            capture: Box::new(CaptureFromWindow::new("ウィンドウ プロジェクター (プレビュー)", "").unwrap()),
-//            capture: Box::new(CaptureFromVideoDevice::new(0)),
-//            capture: Box::new(CaptureFromDesktop::default()),
-            capture: Box::new(CaptureFromEmpty::default()),
+            capture: Box::new(CaptureFromEmpty::new().unwrap()),
             scene_loading: LoadingScene::default(),
             scene_list: vec![
                 Box::new(ReadyToFightScene::default()),
@@ -1259,7 +1368,7 @@ impl SceneManager {
             }
         }
 
-        opencv::highgui::imshow("capture image", &capture_image)?;
+        opencv::highgui::imshow("capture_image", &capture_image)?;
 
         Ok(None)
     }
