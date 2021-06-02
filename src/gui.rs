@@ -1,4 +1,5 @@
 
+use anyhow::*;
 use iced::{
     pane_grid, scrollable,
     Button, Column, Command, Container, Element,
@@ -6,7 +7,12 @@ use iced::{
     PaneGrid, PickList, Scrollable, Text, TextInput,
     VerticalAlignment,
 };
+use serde::{
+    Deserialize,
+    Serialize
+};
 use std::time::{Duration, Instant};
+
 
 use crate::capture::CaptureFromVideoDevice;
 use crate::data::{
@@ -28,12 +34,16 @@ pub enum Message {
     Tick(Instant),
     TitleClicked(pane_grid::Pane),
     TileClicked(pane_grid::Pane),
+    WindowCloseRequest,
 }
 
 /* GUIを管理するクラス */
 pub struct GUI {
     engine: SmashBrogEngine,
     count: i32,
+    started_window: bool,
+    should_exit: bool,
+    gui_config: GUIConfig,
     pane_battle_infomation: pane_grid::State<ContentBattleInfomation>,
     pane_battle_history: pane_grid::State<ContentBattleHistory>,
     pane_settings: pane_grid::State<ContentSettings>,
@@ -41,15 +51,18 @@ pub struct GUI {
 }
 impl Default for GUI {
     fn default() -> Self {
-        unsafe { CAPTION.set(String::from("")).unwrap() };
+        unsafe{ CAPTION.set(String::from(Self::DEFAULT_CAPTION)).unwrap() };
 
         Self {
             engine: Default::default(),
             count: 0,
+            started_window: false,
+            should_exit: false,
+            gui_config: Default::default(),
             pane_battle_infomation: pane_grid::State::new(ContentBattleInfomation::new()).0,
             pane_battle_history: pane_grid::State::new(ContentBattleHistory::new()).0,
             pane_settings: pane_grid::State::new(ContentSettings::new()).0,
-            selected_capture_mode: Default::default(),
+            selected_capture_mode: CaptureMode::default(),
         }
     }
 }
@@ -64,29 +77,40 @@ impl iced_winit::application::Application for GUI {
             Command::none()
         )
     }
-    fn title(&self) -> String { format!("{}|{}", Self::get_title(), self.count) }
+    fn title(&self) -> String { Self::get_title().to_string() }
 
     // ここで iced と winit の Event を相互変換したり、独自の Event を発行する
     fn subscription(&self) -> iced::Subscription<Message> {
-        iced_winit::subscription::events_with(|event, status| {
+        let mut subscription_list = vec![];
+
+        subscription_list.push(iced_native::subscription::events_with(|event, status| {
             if let iced_winit::event::Status::Captured = status {
                 return None;
             }
-
             match event {
-                iced_winit::Event::Mouse(event) => match event {
-                    iced::mouse::Event::ButtonPressed(_) => {
-                        Some(Message::DummyMessage)
-                    },
-                    _ => None,
+                iced_native::Event::Window(event) => {
+                    match event {
+                        iced_native::window::Event::CloseRequested => {
+                            Some(Message::WindowCloseRequest)
+                        },
+                        _ => None,
+                    }
                 },
                 _ => None,
             }
-        });
+        }));
 
         // iced でタイマー処理するには、非同期にイベントを発行しなければいけないらしい
-        time::every(Duration::from_millis(1000/15))
-            .map(|instant| Message::Tick(instant))
+        subscription_list.push(
+            iced::time::every(Duration::from_millis(1000/15))
+                .map(|instant| Message::Tick(instant))
+        );
+
+        iced::Subscription::batch(subscription_list)
+    }
+
+    fn should_exit(&self) -> bool {
+        self.should_exit
     }
 }
 
@@ -99,11 +123,13 @@ impl iced_winit::Program for GUI {
 
     // subscription で予約発行されたイベントの処理
     fn update(&mut self, message: Message, _clipboard: &mut Self::Clipboard) -> Command<Message> {
-        use std::collections::HashMap;
         match message {
-            Message::CaptureModeChanged(capture_mode) => self.selected_capture_mode = capture_mode,
+            Message::CaptureModeChanged(capture_mode) => {
+                self.selected_capture_mode = capture_mode;
+                self.load_config(false).unwrap_or(());
+            },
             Message::CaptureDeviceChanged(device_name) => {
-                if let CaptureMode::VideoDevice(_, dev_id, dev_name) = self.selected_capture_mode.as_mut() {
+                if let CaptureMode::VideoDevice(_, _, dev_name) = self.selected_capture_mode.as_mut() {
                     *dev_name = device_name.clone();
                 }
             },
@@ -128,6 +154,8 @@ impl iced_winit::Program for GUI {
                     }
                 }
 
+                self.save_config(false).unwrap_or(());
+
                 if let Err(e) = self.engine.change_capture_mode(self.selected_capture_mode.as_ref()) {
 
                 }
@@ -136,14 +164,24 @@ impl iced_winit::Program for GUI {
                 self.count += 1;
                 match self.engine.update() {
                     Ok(_) => {
-                        // no problem
+                        // コンフィグを読み込む時にウィンドウのもろもろもあるので、
+                        // Tick で何回か window の存在確認をする
+                        if false == self.started_window {
+                            if self.load_config(true).is_ok() {
+                                self.started_window = true;
+                            }
+                        }
                     },
                     Err(e) => {
                         // quit
                         println!("quit. [{}]", e);
-                        std::process::exit(1);
+                        self.should_exit = true;
                     }
                 }
+            },
+            Message::WindowCloseRequest => {
+                self.save_config(true).unwrap_or(());
+                self.should_exit = true;
             },
             _ => (),
         }
@@ -208,6 +246,76 @@ impl iced_winit::Program for GUI {
 use once_cell::sync::OnceCell;
 static mut CAPTION: OnceCell<String> = OnceCell::new();
 impl GUI {
+    const DEFAULT_CAPTION: &'static str = "smabrog";
+    const CONFIG_FILE: &'static str = "config.json";
+
+    /// 設定情報の読み込み
+    fn load_config(&mut self, is_initalize: bool) -> Result<()> {
+        let file = std::fs::File::open(Self::CONFIG_FILE)?;
+        self.gui_config = serde_json::from_reader(std::io::BufReader::new(file))?;
+
+        if is_initalize && cfg!(target_os = "windows") {
+            unsafe {
+                // 位置復元
+                use winapi::um::winuser;
+                use crate::utils::utils::to_wchar;
+                use winapi::shared::minwindef::BOOL;
+                let own_handle = winuser::FindWindowW(std::ptr::null_mut(), to_wchar(Self::DEFAULT_CAPTION));
+                if own_handle.is_null() {
+                    return Err(anyhow!("Not found Window."));
+                }
+                winuser::MoveWindow(own_handle, self.gui_config.window_x, self.gui_config.window_y, 256, 720, true as BOOL);
+            }
+            println!("loaded config.");
+        }
+
+        if let CaptureMode::Window(_, win_caption, win_class) = self.selected_capture_mode.as_mut() {
+            *win_caption = self.gui_config.capture_win_caption.clone();
+            *win_class = self.gui_config.capture_win_class.clone();
+        } else if let CaptureMode::Window(_, _, device_name) = self.selected_capture_mode.as_mut() {
+            *device_name = self.gui_config.capture_device_name.clone();
+        }
+
+        Ok(())
+    }
+    /// 設定情報の保存
+    fn save_config(&mut self, is_finalize: bool) -> Result<(), Box<dyn std::error::Error>> {
+        if is_finalize && cfg!(target_os = "windows") {
+            unsafe {
+                // 位置復元用
+                use winapi::um::winuser;
+                use crate::utils::utils::to_wchar;
+    
+                let own_handle = winuser::FindWindowW(std::ptr::null_mut(), to_wchar(Self::get_title()));
+                if !own_handle.is_null() {
+                    let mut window_rect = winapi::shared::windef::RECT { left:0, top:0, right:0, bottom:0 };
+                    winapi::um::winuser::GetWindowRect(own_handle, &mut window_rect);
+                    self.gui_config.window_x = window_rect.left;
+                    self.gui_config.window_y = window_rect.top;
+                }
+            }
+            println!("saved config.");
+        }
+
+        match self.selected_capture_mode.as_ref() {
+            CaptureMode::VideoDevice(_, _, device_name) => {
+                self.gui_config.capture_device_name = device_name.clone();
+            },
+            CaptureMode::Window(_, win_caption, win_class) => {
+                self.gui_config.capture_win_caption = win_caption.clone();
+                self.gui_config.capture_win_class = win_class.clone();
+            },
+            _ => (),
+        }
+
+        use std::io::Write;
+        let serialized_data = serde_json::to_string(&self.gui_config).unwrap();
+        let mut file = std::fs::File::create(Self::CONFIG_FILE)?;
+        file.write_all(serialized_data.as_bytes())?;
+
+        Ok(())
+    }
+
     // 他モジュールから動的にキャプションを変更するためのもの
     pub fn get_title() -> &'static str {
         unsafe {
@@ -233,6 +341,17 @@ impl GUI {
         }
     }
 }
+
+// 設定ファイル
+#[derive(Debug, Default, Deserialize, Serialize)]
+struct GUIConfig {
+    pub window_x: i32,
+    pub window_y: i32,
+    pub capture_win_caption: String,
+    pub capture_win_class: String,
+    pub capture_device_name: String,
+}
+
 
 // 対戦中情報
 struct ContentBattleInfomation {
@@ -540,7 +659,7 @@ impl ContentBattleTile {
 }
 
 // 検出する方法
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub enum CaptureMode {
     Empty(&'static str),
     Desktop(&'static str),
@@ -673,42 +792,6 @@ mod style {
                 shadow_offset: iced::Vector::new(1.0, 2.0),
                 ..self.active()
             }
-        }
-    }
-}
-
-// 非同期に Subscription へ Instant を duration 毎に予約するモジュール
-mod time {
-    use iced::futures;
-    use std::time::Instant;
-
-    pub fn every(duration: std::time::Duration) -> iced::Subscription<Instant> {
-        iced::Subscription::from_recipe(Every(duration))
-    }
-
-    struct Every(std::time::Duration);
-    impl<H, I> iced_native::subscription::Recipe<H, I> for Every
-        where H: std::hash::Hasher,
-    {
-        type Output = Instant;
-
-        fn hash(&self, state: &mut H) {
-            use std::hash::Hash;
-
-            std::any::TypeId::of::<Self>().hash(state);
-            self.0.hash(state);
-        }
-
-        // Recipe から Instant への変換
-        fn stream(
-            self: Box<Self>,
-            _input: futures::stream::BoxStream<'static, I>,
-        ) -> futures::stream::BoxStream<'static, Self::Output> {
-            use futures::stream::StreamExt;
-
-            tokio::time::interval(self.0)
-                .map(|_| Instant::now())
-                .boxed()
         }
     }
 }

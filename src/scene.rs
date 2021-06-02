@@ -5,7 +5,6 @@ use opencv::{
     imgproc,
     prelude::*
 };
-use tesseract::Tesseract;
 
 use crate::capture::*;
 use crate::data::*;
@@ -13,147 +12,13 @@ use crate::gui::{
     GUI,
     Message,
 };
+use crate::utils::utils;
 
 
 #[derive(Copy, Clone)]
 pub enum ColorFormat {
     NONE = 0, GRAY = 1,
     RGB = 3, RGBA = 4,
-}
-
-pub struct Utils {}
-impl Utils {
-    // if-else も match もさけようね～というやつ
-    const COLOR_MAP: [[i32; 5]; 5] = [
-        [-1, -1, -1, -1, -1],    // null to null
-        [-1, -1, -1, imgproc::COLOR_GRAY2RGB, imgproc::COLOR_GRAY2RGBA],   // gray to hoge
-        [-1, -1, -1, -1, -1],    // unknown to unknown
-        [-1, imgproc::COLOR_RGB2GRAY, -1, -1, imgproc::COLOR_RGB2RGBA],   // rgb to hoge
-        [-1, imgproc::COLOR_RGBA2GRAY, -1, imgproc::COLOR_RGBA2RGB, 0],   // rgba to hoge
-    ];
-
-    /// src.channels() に応じて to_channels に変換する cvt_color をする
-    /// src.channels() == to_channels なら src.copy_to(dst) をする
-    pub fn cvt_color_to(src: &core::Mat, dst: &mut core::Mat, to_channels: i32) -> opencv::Result<()> {
-        let color_map = Utils::COLOR_MAP[src.channels()? as usize][to_channels as usize];
-        if -1 == color_map {
-            // コピーだけする
-            src.copy_to(dst)?;
-            return Ok(());
-        }
-
-        imgproc::cvt_color(src, dst, color_map, 0)?;
-        Ok(())
-    }
-
-    /// OpenCV に処理するメソッドがないため定義。(NaN はあるのにどうして inf は無いんだ？？？)
-    pub fn patch_inf_ns(data: &mut core::Mat, to_value: f32) -> opencv::Result<()> {
-        for y in 0..data.cols() {
-            for x in 0..data.rows() {
-                let value = data.at_mut::<f32>(y * data.rows() + x)?;
-                if *value == std::f32::INFINITY || *value == std::f32::NEG_INFINITY {
-                    *value = to_value;
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// src に対しての特定色を透過色とした mask を作成
-    pub fn make_trans_mask_from_noalpha(src: &core::Mat, dst: &mut core::Mat) -> opencv::Result<()> {
-        let trans_color = [0.0, 0.0, 0.0, 1.0];
-        let lower_mat = core::Mat::from_slice(&trans_color)?;
-        let upper_mat = core::Mat::from_slice(&trans_color)?;
-        let mut mask = core::Mat::default();
-        core::in_range(&src, &lower_mat, &upper_mat, &mut mask)?;
-        core::bitwise_not(&mask, dst, &core::no_array()?)?;
-
-        Ok(())
-    }
-
-    /// 任意の四角形の中にある何かの輪郭にそって src を加工して返す
-    pub fn trimming_any_rect(src: &mut core::Mat, gray_src: &core::Mat, margin: Option<i32>,
-        min_size: Option<f64>, max_size: Option<f64>, noise_fill: bool, noise_color: Option<core::Scalar>)
-    -> opencv::Result<core::Mat>
-    {
-        let mut contours = opencv::types::VectorOfVectorOfPoint::new();
-        let (width, height) = (src.cols(), src.rows());
-        let mut any_rect = core::Rect::new(width, height, 0, 0);
-        imgproc::find_contours(gray_src, &mut contours, imgproc::RETR_EXTERNAL, imgproc::CHAIN_APPROX_SIMPLE, core::Point{x:0,y:0})?;
-
-        for (i, contour) in &mut contours.to_vec().iter_mut().enumerate() {
-            let area_contours = opencv::types::VectorOfPoint::from_iter(contour.iter());
-            let area = imgproc::contour_area(&area_contours, false)?;
-            // ノイズの除去 or スキップ
-            if area < min_size.unwrap_or(10.0) {
-                if noise_fill {
-                    imgproc::draw_contours(
-                        src, &contours, i as i32, noise_color.unwrap_or(core::Scalar::new(255.0, 255.0, 255.0, 0.0)),
-                        1, imgproc::LINE_8, &core::no_array()?, std::i32::MAX, core::Point{x:0,y:0})?;
-                }
-                continue;
-            } else if max_size.unwrap_or(10_000.0) < area {
-                if noise_fill && max_size.is_some() {
-                    imgproc::draw_contours(
-                        src, &contours, i as i32, noise_color.unwrap_or(core::Scalar::new(255.0, 255.0, 255.0, 0.0)),
-                        1, imgproc::LINE_8, &core::no_array()?, std::i32::MAX, core::Point{x:0,y:0})?;
-                }
-                continue;
-            }
-
-            let rect = imgproc::bounding_rect(&area_contours)?;
-            any_rect.x = std::cmp::min(any_rect.x, rect.x);
-            any_rect.y = std::cmp::min(any_rect.y, rect.y);
-            any_rect.width = std::cmp::max(any_rect.x, rect.x + rect.width);
-            any_rect.height = std::cmp::max(any_rect.y, rect.y + rect.height);
-        }
-
-        let mut trimming_rect = core::Rect {
-            x: std::cmp::max(any_rect.x - margin.unwrap_or(0), 0),
-            y: std::cmp::max(any_rect.y - margin.unwrap_or(0), 0),
-            width: std::cmp::min(any_rect.width + margin.unwrap_or(0), width),
-            height: std::cmp::min(any_rect.height + margin.unwrap_or(0), height)};
-        trimming_rect.width -= trimming_rect.x + 1;
-        trimming_rect.height -= trimming_rect.y + 1;
-        match core::Mat::roi(&src, trimming_rect) {
-            Ok(result_image) => Ok(result_image),
-            // size が 0 近似で作成できないときが予想されるので、src を返す
-            Err(_) => Ok(src.clone()),
-        }
-    }
-
-    /// Tesseract-OCR を Mat で叩く
-    /// tesseract::ocr_from_frame だと「Warning: Invalid resolution 0 dpi. Using 70 instead.」がうるさかったので作成
-    pub fn ocr_with_mat(image: &core::Mat) -> Tesseract {
-        let size = image.channels().unwrap() * image.cols() * image.rows();
-        let data: &[u8] = unsafe{ std::slice::from_raw_parts(image.datastart(), size as usize) };
-
-        let tess = Tesseract::new(None, Some("eng")).unwrap()
-            .set_page_seg_mode(tesseract_sys::TessPageSegMode_PSM_SINGLE_BLOCK)
-            .set_frame(data, image.cols(), image.rows(),
-                image.channels().unwrap(), image.channels().unwrap() * image.cols()).unwrap()
-            .set_source_resolution(70);
-        
-        tess
-    }
-    /// OCR(大文字アルファベットのみを検出)
-    pub async fn run_ocr_with_upper_alpha(image: &core::Mat) -> Result<String, tesseract::TesseractError> {
-        Ok(
-            Utils::ocr_with_mat(image)
-                .set_variable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZ").unwrap()
-                .recognize()?
-                .get_text().unwrap_or("".to_string())
-        )
-    }
-    /// OCR(数値を検出)
-    pub async fn run_ocr_with_number(image: &core::Mat) -> Result<String, tesseract::TesseractError> {
-        Ok(
-            Utils::ocr_with_mat(image)
-                .set_variable("tessedit_char_whitelist", "0123456789-.").unwrap()
-                .recognize()?
-                .get_text().unwrap_or("".to_string())
-        )
-    }
 }
 
 
@@ -186,12 +51,12 @@ impl SceneJudgment {
         let mut converted_color_image = core::Mat::default();
 
         // 強制で color_format にする
-        Utils::cvt_color_to(&color_image, &mut converted_color_image, color_format as i32)?;
+        utils::cvt_color_to(&color_image, &mut converted_color_image, color_format as i32)?;
 
         let converted_mask_image = match &mask_image {
             Some(v) => {
                 let mut converted_mask_image = core::Mat::default();
-                Utils::cvt_color_to(&v, &mut converted_mask_image, color_format as i32)?;
+                utils::cvt_color_to(&v, &mut converted_mask_image, color_format as i32)?;
 
                 Some(converted_mask_image)
             },
@@ -217,7 +82,7 @@ impl SceneJudgment {
     fn new_trans(color_image: core::Mat, mask_image: Option<core::Mat>) -> opencv::Result<Self> {
         // 他のメンバを透過に変換しておく
         let mut converted_color_image = core::Mat::default();
-        Utils::cvt_color_to(&color_image, &mut converted_color_image, ColorFormat::RGBA as i32)?;
+        utils::cvt_color_to(&color_image, &mut converted_color_image, ColorFormat::RGBA as i32)?;
 
         // 透過画像の場合は予め透過マスクを作成する
         let mut converted_mask_image = core::Mat::default();
@@ -225,11 +90,11 @@ impl SceneJudgment {
         match &mask_image {
             Some(v) => {
                 // 強制で RGBA にする
-                Utils::cvt_color_to(&v, &mut trans_mask_image, ColorFormat::RGBA as i32)?;
-                Utils::cvt_color_to(&v, &mut converted_mask_image, ColorFormat::RGBA as i32)?;
+                utils::cvt_color_to(&v, &mut trans_mask_image, ColorFormat::RGBA as i32)?;
+                utils::cvt_color_to(&v, &mut converted_mask_image, ColorFormat::RGBA as i32)?;
             },
             None => {
-                Utils::make_trans_mask_from_noalpha(&color_image, &mut trans_mask_image)?;
+                utils::make_trans_mask_from_noalpha(&color_image, &mut trans_mask_image)?;
             },
         }
 
@@ -252,7 +117,7 @@ impl SceneJudgment {
     async fn match_captured_scene(&mut self, captured_image: &core::Mat) {
         let mut result = core::Mat::default();
         let mut converted_captured_image = core::Mat::default();
-        Utils::cvt_color_to(captured_image, &mut converted_captured_image, self.judgment_type as i32).unwrap();
+        utils::cvt_color_to(captured_image, &mut converted_captured_image, self.judgment_type as i32).unwrap();
 
         match self.judgment_type {
             ColorFormat::NONE => (),
@@ -282,7 +147,7 @@ impl SceneJudgment {
         };
 
         core::patch_na_ns(&mut result, -0.0).unwrap();
-        Utils::patch_inf_ns(&mut result, -0.0).unwrap();
+        utils::patch_inf_ns(&mut result, -0.0).unwrap();
 
         core::min_max_loc(&result,
             &mut 0.0, &mut self.prev_match_ratio,
@@ -685,7 +550,7 @@ impl HamVsSpamScene {
 
         use regex::Regex;
         let mut gray_capture_image = core::Mat::default();
-        Utils::cvt_color_to(capture_image, &mut gray_capture_image, ColorFormat::GRAY as i32)?;
+        utils::cvt_color_to(capture_image, &mut gray_capture_image, ColorFormat::GRAY as i32)?;
 
         // 近似白黒処理して
         let mut temp_capture_image = core::Mat::default();
@@ -713,12 +578,12 @@ impl HamVsSpamScene {
             let gray_name_area_image = core::Mat::roi(&work_capture_image, player_name_area)?;
 
             // 輪郭捕捉して
-            let name_contour_image = Utils::trimming_any_rect(
+            let name_contour_image = utils::trimming_any_rect(
                 &mut name_area_image, &gray_name_area_image, Some(5), None, None, false, None)?;
-            Utils::cvt_color_to(&name_contour_image, &mut name_area_image, ColorFormat::RGB as i32)?;
+            utils::cvt_color_to(&name_contour_image, &mut name_area_image, ColorFormat::RGB as i32)?;
             
             // tesseract でキャラ名取得して, 余計な文字を排除
-            let text = &async_std::task::block_on(Utils::run_ocr_with_upper_alpha(&name_area_image)).unwrap();
+            let text = &async_std::task::block_on(utils::run_ocr_with_upper_alpha(&name_area_image)).unwrap();
             if let Some(caps) = re.captures( text ) {
                 smashbros_data.guess_character_name( player_count, String::from(&caps[1]) );
             }
@@ -812,16 +677,16 @@ impl HamVsSpamScene {
         let mut gray_capture_image = core::Mat::default();
         imgproc::threshold(capture_image, &mut gray_capture_image, 250.0, 255.0, imgproc::THRESH_BINARY)?;
         let mut work_capture_image = core::Mat::default();
-        Utils::cvt_color_to(&gray_capture_image, &mut work_capture_image, ColorFormat::GRAY as i32)?;
+        utils::cvt_color_to(&gray_capture_image, &mut work_capture_image, ColorFormat::GRAY as i32)?;
 
         // 輪郭捕捉して(数値の範囲)
-        let contour_image = Utils::trimming_any_rect(
+        let contour_image = utils::trimming_any_rect(
             capture_image, &work_capture_image, Some(1), Some(1.0), None, false, None)?;
         let mut gray_contour_image = core::Mat::default();
-        Utils::cvt_color_to(&contour_image, &mut gray_contour_image, ColorFormat::RGB as i32)?;
+        utils::cvt_color_to(&contour_image, &mut gray_contour_image, ColorFormat::RGB as i32)?;
 
         // tesseract で文字(数値)を取得して, 余計な文字を排除
-        let text = &async_std::task::block_on(Utils::run_ocr_with_number(&gray_contour_image)).unwrap().to_string();
+        let text = &async_std::task::block_on(utils::run_ocr_with_number(&gray_contour_image)).unwrap().to_string();
         let re = Regex::new(regex_pattern).unwrap();
         if let Some(caps) = re.captures( text ) {
             return Ok( caps[1].to_string() );
@@ -989,7 +854,7 @@ impl GamePlayingScene {
         // ストックの位置を切り取って
         let mut temp_capture_image = core::Mat::default();
         let mut gray_number_area_image = core::Mat::default();
-        Utils::cvt_color_to(&capture_image, &mut gray_number_area_image, ColorFormat::GRAY as i32)?;
+        utils::cvt_color_to(&capture_image, &mut gray_number_area_image, ColorFormat::GRAY as i32)?;
         core::bitwise_and(&gray_number_area_image, stock_number_mask, &mut temp_capture_image, &core::no_array()?)?;
 
         // 近似白黒処理して
@@ -1017,11 +882,11 @@ impl GamePlayingScene {
             let gray_stock_area_image = core::Mat::roi(&gray_number_area_image, player_stock_area)?;
 
             // 輪郭捕捉して
-            let stock_contour_image = Utils::trimming_any_rect(
+            let stock_contour_image = utils::trimming_any_rect(
                 &mut stock_area_image, &gray_stock_area_image, Some(5), Some(1000.0), None, true, None)?;
 
             // tesseract で文字(数値)を取得して, 余計な文字を排除
-            let text = &async_std::task::block_on(Utils::run_ocr_with_number(&stock_contour_image)).unwrap().trim().to_string();
+            let text = &async_std::task::block_on(utils::run_ocr_with_number(&stock_contour_image)).unwrap().trim().to_string();
             if let Some(caps) = re.captures( text ) {
                 smashbros_data.guess_stock( player_count, (&caps[1]).parse().unwrap_or(-1) );
             }
@@ -1245,7 +1110,7 @@ impl ResultScene {
         // 戦闘力の位置を切り取って
         let mut temp_capture_image = core::Mat::default();
         let mut gray_number_area_image = core::Mat::default();
-        Utils::cvt_color_to(&capture_image, &mut gray_number_area_image, ColorFormat::GRAY as i32)?;
+        utils::cvt_color_to(&capture_image, &mut gray_number_area_image, ColorFormat::GRAY as i32)?;
         core::bitwise_and(&gray_number_area_image, result_power_mask, &mut temp_capture_image, &core::no_array()?)?;
 
         // プレイヤー毎に処理する
@@ -1267,7 +1132,7 @@ impl ResultScene {
             let gray_power_area_image = core::Mat::roi(&gray_number_area_image, player_power_area)?;
 
             // 輪郭捕捉して(maskで切り取った戦闘力の領域)
-            let mut power_contour_image = Utils::trimming_any_rect(
+            let mut power_contour_image = utils::trimming_any_rect(
                 &mut power_area_image, &gray_power_area_image, None, None, None, false, None)?;
 
             // 近似白黒処理して
@@ -1275,12 +1140,12 @@ impl ResultScene {
             imgproc::threshold(&power_contour_image, &mut work_capture_image, 127.0, 255.0, imgproc::THRESH_BINARY)?;
 
             // 輪郭捕捉して(数値の範囲)
-            let power_contour_image = Utils::trimming_any_rect(
+            let power_contour_image = utils::trimming_any_rect(
                 &mut power_contour_image, &work_capture_image, Some(1), Some(1.0), None, false, None)?;
-            Utils::cvt_color_to(&power_contour_image, &mut power_area_image, ColorFormat::RGB as i32)?;
+            utils::cvt_color_to(&power_contour_image, &mut power_area_image, ColorFormat::RGB as i32)?;
 
             // tesseract で文字(数値)を取得して, 余計な文字を排除
-            let text = &async_std::task::block_on(Utils::run_ocr_with_number(&power_area_image)).unwrap().to_string();
+            let text = &async_std::task::block_on(utils::run_ocr_with_number(&power_area_image)).unwrap().to_string();
             let number = re.split(text).collect::<Vec<&str>>().join(""); // 5桁まで (\d,\d,\d,\d,\d)
             smashbros_data.guess_power( player_count, number.parse().unwrap_or(-1) );
         }
@@ -1334,11 +1199,8 @@ impl SceneManager {
 
         if self.scene_loading.is_scene(&capture_image, None)? {
             // 読込中の画面(真っ黒に近い)はテンプレートマッチングで 1.0 がでてしまうので回避
-            GUI::set_title(&format!("loading..."));
             return Ok(None);
         }
-
-        GUI::set_title(&format!(""));
 
         // 現在キャプチャと比較して遷移する
         for scene in &mut self.scene_list[..] {

@@ -7,7 +7,7 @@
 
 */
 
-use smabrog::gui::*;
+use smabrog::gui::GUI;
 
 /* メインループ */
 #[tokio::main]
@@ -26,8 +26,9 @@ fn make_gui_run() -> Result<(), iced_winit::Error> {
     let settings = iced_winit::Settings::<()> {
         window: window,
         flags: (),
-        exit_on_close_request: true
+        exit_on_close_request: false
     };
+    
     let renderer_settings = iced_wgpu::Settings {
         antialiasing: Some(iced_wgpu::settings::Antialiasing::MSAAx4),
         default_text_size: 18,

@@ -1108,7 +1108,7 @@ impl SmashbrosData {
 
     /// プレイヤーの戦闘力の推測 (一桁以下は無視)
     pub fn guess_power(&mut self, player_number: i32, maybe_power: i32) {
-        if self.is_decided_power(player_number) || maybe_power < 10 {
+        if self.is_decided_power(player_number) || maybe_power < 100 {
             return;
         }
 

@@ -18,19 +18,8 @@ use crate::scene::{
     ReadyToFightScene,
     SceneTrait
 };
+use crate::utils::utils::to_wchar;
 
-
-/// &str -> WCHAR
-fn to_wchar(value: &str) -> *mut winapi::ctypes::wchar_t {
-    use std::os::windows::ffi::OsStrExt;
-
-    let mut vec16 :Vec<u16> = std::ffi::OsStr::new(value)
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
-
-    vec16.as_mut_ptr()
-}
 
 /// Mat,DCを保持するクラス。毎回 Mat を作成するのはやはりメモリコストが高すぎた。
 struct CaptureDC {
@@ -246,10 +235,6 @@ impl CaptureFromVideoDevice {
     /// @return Option<Vec<(i32, String)>> 無いか、[DeviceName]と[DeviceID]が入った[HashMap]
     pub fn get_device_list() -> Option<std::collections::HashMap<String, i32>> {
         use std::collections::HashMap;
-        if !cfg!(target_os = "windows") {
-            return None;
-        }
-
         match std::process::Command::new("video_device_list.exe").output() {
             Err(_) => None,
             Ok(output) => {
