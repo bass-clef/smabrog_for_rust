@@ -20,6 +20,7 @@ use crate::data::{
     SMASHBROS_RESOURCE
 };
 use crate::engine::*;
+use crate::scene::SceneList;
 
 
 #[derive(Debug, Clone)]
@@ -174,7 +175,7 @@ impl iced_winit::Program for GUI {
                     },
                     Err(e) => {
                         // quit
-                        println!("quit. [{}]", e);
+                        log::error!("quit. [{}]", e);
                         self.should_exit = true;
                     }
                 }
@@ -191,16 +192,13 @@ impl iced_winit::Program for GUI {
 
     // ui の表示(静的でなく動的で書き換えられる)
     fn view(&mut self) -> Element<Message> {
-        use std::sync::{ Arc, Mutex };
-        let data = Arc::new(Mutex::new( self.engine.get_now_data() ));
+        let now_data = self.engine.get_now_data();
         let pane_battle_infomation = PaneGrid::new(&mut self.pane_battle_infomation, |pane, content| {
-                let data = data.clone();
-                let data: SmashbrosData = (*data.lock().unwrap()).clone();
                 let title_bar = pane_grid::TitleBar::new(Text::new("Battle Infomation:"))
                     .padding(10)
                     .style(style::TitleBar{ pane_type: style::PaneType::Information });
 
-                pane_grid::Content::new( content.view(pane, data) )
+                pane_grid::Content::new( content.view(pane, now_data.clone()) )
                     .title_bar(title_bar)
                     .style(style::Pane{ pane_type: style::PaneType::Information })
             })
@@ -208,15 +206,13 @@ impl iced_winit::Program for GUI {
             .height(Length::FillPortion(16))
             .on_click(Message::TitleClicked);
 
-        let data_list = Arc::new(Mutex::new( self.engine.get_data_latest_10() ));
+        let data_list = self.engine.get_data_latest_10();
         let pane_battle_history = PaneGrid::new(&mut self.pane_battle_history, |pane, content| {
-                let data_list = data_list.clone();
-                let data_list: Vec<SmashbrosData> = (*data_list.lock().unwrap()).clone();
                 let title_bar = pane_grid::TitleBar::new(Text::new("Battle History:"))
                     .padding(10)
                     .style(style::TitleBar{ pane_type: style::PaneType::History });
 
-                pane_grid::Content::new( content.view(pane, data_list) )
+                pane_grid::Content::new( content.view(pane, data_list.clone()) )
                     .title_bar(title_bar)
                     .style(style::Pane{ pane_type: style::PaneType::History })
             })
@@ -225,8 +221,9 @@ impl iced_winit::Program for GUI {
             .on_click(Message::TitleClicked);
 
         let selected_capture_mode = self.selected_capture_mode.as_ref();
+        let captured_scene = self.engine.get_captured_scene();
         let pane_settings = PaneGrid::new(&mut self.pane_settings, |pane, content| {
-                let (view, title_bar) = content.view(pane, selected_capture_mode);
+                let (view, title_bar) = content.view(pane, selected_capture_mode, captured_scene);
                 pane_grid::Content::new(view)
                     .title_bar(title_bar)
                     .style(style::Pane{ pane_type: style::PaneType::Settings })
@@ -264,9 +261,10 @@ impl GUI {
                 if own_handle.is_null() {
                     return Err(anyhow!("Not found Window."));
                 }
-                winuser::MoveWindow(own_handle, self.gui_config.window_x, self.gui_config.window_y, 256, 720, true as BOOL);
+                // リサイズされるのを期待して適当に大きくする
+                winuser::MoveWindow(own_handle, self.gui_config.window_x, self.gui_config.window_y, 256+16, 720+39, true as BOOL);
             }
-            println!("loaded config.");
+            log::info!("loaded config.");
         }
 
         if let CaptureMode::Window(_, win_caption, win_class) = self.selected_capture_mode.as_mut() {
@@ -294,7 +292,7 @@ impl GUI {
                     self.gui_config.window_y = window_rect.top;
                 }
             }
-            println!("saved config.");
+            log::info!("saved config.");
         }
 
         match self.selected_capture_mode.as_ref() {
@@ -442,6 +440,7 @@ impl ContentBattleHistory {
 // 設定変更
 struct ContentSettings {
     dummy_button: iced::button::State,
+    dummy_button_2: iced::button::State,
     apply_button: iced::button::State,
     prev_time: std::time::Instant,
 
@@ -465,6 +464,7 @@ impl ContentSettings {
 
         Self {
             dummy_button: iced::button::State::new(),
+            dummy_button_2: iced::button::State::new(),
             apply_button: iced::button::State::new(),
             prev_time: std::time::Instant::now(),
 
@@ -481,7 +481,7 @@ impl ContentSettings {
 
     /// 借用書の解決が難しかったので、タプルで content と title_bar を返す
     /// @return (Element<Message>, pane_grid::TitleBar<Message>) (content, title_bar)
-    fn view<'b>(&'b mut self, _pane: pane_grid::Pane, capture_mode: &CaptureMode) -> (Element<Message>, pane_grid::TitleBar<Message>) {
+    fn view<'b>(&'b mut self, _pane: pane_grid::Pane, capture_mode: &CaptureMode, captured_scene: SceneList) -> (Element<Message>, pane_grid::TitleBar<Message>) {
         // content
         let mut controlls = Column::new();
 
@@ -545,8 +545,7 @@ impl ContentSettings {
         // title_bar
         let mut title_bar_row = iced::Row::new()
             .align_items(iced::Align::Center)
-            .push(Text::new("Settings: ["))
-            .push(Text::new("Job: "));
+            .push(Text::new("Settings: [Job: "));
 
         title_bar_row = match self.prev_time.elapsed().as_millis() as i32 {
             0 ..=  99 => title_bar_row.push(
@@ -564,10 +563,25 @@ impl ContentSettings {
                     .style(style::ColorButton{ color: style::WARNING_COLOR })
                     .on_press(Message::None),
             ),
-        };
-        self.prev_time = std::time::Instant::now();
+        }.push(Text::new("/"));
+        title_bar_row = match &captured_scene {
+            SceneList::Unknown => {
+                title_bar_row.push(
+                    Button::new(&mut self.dummy_button_2, Text::new("NotFound"))
+                    .style(style::ColorButton{ color: style::ERROR_COLOR })
+                    .on_press(Message::None),
+                )
+            },
+            _ => {
+                title_bar_row.push(
+                    Button::new(&mut self.dummy_button_2, Text::new(&format!("{:?}", captured_scene)))
+                    .style(style::ColorButton{ color: style::SUCCESS_COLOR })
+                    .on_press(Message::None),
+                )
+            }
+        }.push(Text::new(" ]"));
 
-        title_bar_row = title_bar_row.push(Text::new(" ]"));
+        self.prev_time = std::time::Instant::now();
 
         (
             Container::new(controlls)
@@ -590,11 +604,25 @@ impl Default for ContentBattleTile {
     }
 }
 impl ContentBattleTile {
-    fn push_chara<'a>(&mut self, row: iced::Row<'a, Message>, chara_name: String, text: &str) -> iced::Row<'a, Message> {
+    fn push_chara<'a>(&mut self, row: iced::Row<'a, Message>, chara_name: String, text: &str, order: i32)
+        -> iced::Row<'a, Message>
+    {
         if let Some(handle) = unsafe{SMASHBROS_RESOURCE.get()}.get_image_handle(chara_name.clone()) {
-            row.push(
-                iced::image::Image::new(handle)
-            )
+            let mut row = row.push(iced::image::Image::new(handle));
+
+            if let Some(handle) = unsafe{SMASHBROS_RESOURCE.get()}.get_order_handle(order) {
+                row = row.push(
+                    iced::Column::new()
+                        .push(iced::widget::Space::with_height(Length::FillPortion(1)))
+                        .push(
+                            iced::image::Image::new(handle)
+                                .width(Length::Shrink)
+                                .height(Length::FillPortion(1))
+                        )
+                );
+            }
+
+            row
         } else {
             row.push(
                 iced::Column::new()
@@ -614,43 +642,53 @@ impl ContentBattleTile {
     }
 
     fn view(&mut self, _pane: pane_grid::Pane, data: SmashbrosData) -> Element<Message> {
-        let mut row = iced::Row::new()
+        let mut chara_order_row = iced::Row::new()
             .spacing(5)
             .align_items(iced::Align::Center);
 
-        if data.get_player_count() < 2 {
-            row = row.push(
+        if 2 != data.get_player_count() {
+            chara_order_row = chara_order_row.push(
                 Text::new("unknown data.")
                     .width(Length::Fill)
                     .height(Length::from(32))
                     .horizontal_alignment(HorizontalAlignment::Center)
                     .vertical_alignment(VerticalAlignment::Center)
             );
-            return Container::new(row)
+            return Container::new(chara_order_row)
                 .style(style::Pane{ pane_type: style::PaneType::Tile })
                 .into();
         }
         
-        row = self.push_chara(row, data.get_character(0).clone(), "1p");
-        row = row.push(Text::new("vs"));
-        row = self.push_chara(row, data.get_character(1).clone(), "2p");
+        let p1_data_row = self.push_chara(iced::Row::new(), data.get_character(0).clone(), "1p", data.get_order(0));
+        let p2_data_row = self.push_chara(iced::Row::new(), data.get_character(1).clone(), "2p", data.get_order(1));
+        chara_order_row = chara_order_row
+            .push(p1_data_row.width(Length::FillPortion(3)))
+            .push(Text::new("vs").width(Length::FillPortion(1)))
+            .push(p2_data_row.width(Length::FillPortion(3)));
 
-        row = row.push(
-            iced::Column::new()
-                .align_items(iced::Align::Center)
-                .push(
-                    Text::new(format!("Rule: {:?}",
-                            data.get_rule()
-                        ))
-                        .width(Length::Fill)
-                )
-                .push(
-                    Text::new(format!("Stock: {} - {} / {} - {}",
-                            data.get_stock(0), data.get_stock(1), data.get_max_stock(0), data.get_max_stock(1)
-                        ))
-                        .width(Length::Fill)
-                )
-        );
+        let time = data.get_max_time().as_secs();
+        let rule_stock_column = iced::Column::new()
+            .align_items(iced::Align::Center)
+            .push(
+                Text::new(format!("Rule: {:?} ({}:{:02})",
+                        data.get_rule(),
+                        time / 60, time % 60
+                    ))
+                    .width(Length::Fill)
+            )
+            .push(
+                Text::new(format!("Stock: {} - {} / ({})",
+                        data.get_stock(0), data.get_stock(1),
+                        if -1 == data.get_max_stock(0) { "??".to_string() } else { data.get_max_stock(0).to_string() },
+                    ))
+                    .width(Length::Fill)
+            );
+
+        let row = iced::Row::new()
+            .spacing(5)
+            .align_items(iced::Align::Center)
+            .push(chara_order_row.width(Length::FillPortion(1)))
+            .push(rule_stock_column.width(Length::FillPortion(1)));
 
         Container::new(row)
             .style(style::Pane{ pane_type: style::PaneType::Tile })
@@ -698,12 +736,6 @@ impl AsMut<CaptureMode> for CaptureMode {
 }
 impl AsRef<CaptureMode> for CaptureMode {
     fn as_ref(&self) -> &CaptureMode { self }
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct CaptureModeFromWindow {
-    win_caption: String,
-    win_class: String,
 }
 
 

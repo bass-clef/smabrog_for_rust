@@ -19,7 +19,7 @@ impl SmashBrogEngine {
         Self {
             scene_manager: SceneManager::default(),
             prev_saved_time: std::time::Instant::now(),
-            data_latest_10: unsafe{BATTLE_HISTORY.get()}.find_with_2_limit_10().unwrap(),
+            data_latest_10: unsafe{BATTLE_HISTORY.get()}.find_data_limit_10().unwrap_or(Vec::new()),
         }
     }
 
@@ -53,7 +53,7 @@ impl SmashBrogEngine {
     /// @result Vec<SmashbrosData> 取得していたデータ郡の clone
     pub fn get_data_latest_10(&mut self) -> Vec<SmashbrosData> {
         if self.is_updated_now_data() {
-            if let Some(data_latest_10) = unsafe{BATTLE_HISTORY.get()}.find_with_2_limit_10() {
+            if let Some(data_latest_10) = unsafe{BATTLE_HISTORY.get()}.find_data_limit_10() {
                 self.data_latest_10 = data_latest_10;
             }
         }
@@ -76,15 +76,19 @@ impl SmashBrogEngine {
         if self.prev_saved_time == prev_saved_time {
             return false;
         }
-        println!("now updated.");
+        log::info!("now updated.");
 
         self.prev_saved_time = prev_saved_time;
 
         true
     }
 
+    pub fn get_captured_scene(&self) -> SceneList {
+        self.scene_manager.get_now_scene()
+    }
+
     /// どっかのメインループで update する用
-    pub fn update(&mut self) -> opencv::Result<Option<Message>> {
-        Ok( self.scene_manager.update()? )
+    pub fn update(&mut self) -> opencv::Result<()> {
+        Ok( self.scene_manager.update_scene_list()? )
     }
 }

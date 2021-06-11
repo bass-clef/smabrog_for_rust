@@ -4,7 +4,7 @@ use difflib::sequencematcher::SequenceMatcher;
 use mongodb::*;
 use mongodb::options::{
     ClientOptions,
-    FindOptions
+    FindOptions,
 };
 use serde::{
     de::Visitor,
@@ -41,10 +41,11 @@ impl SmashbrosResourceText {
         
         match serde_json::from_reader::<_, Self>(reader) {
             Ok(config) => {
-                println!("loaded SmashBros resource version [{}.*.*]", config.version);
+                log::info!("loaded SmashBros resource version [{}.*.*]", config.version);
                 config
             },
             Err(_) => {
+                log::error!("invalid smashbros_resource.");
                 panic!("invalid smashbros_resource.");
             }
         }
@@ -56,6 +57,7 @@ pub struct SmashbrosResource {
     pub version: String,
     pub character_list: HashMap<String, String>,
     pub icon_list: HashMap<String, iced_winit::image::Handle>,
+    pub order_image_list: HashMap<i32, iced_winit::image::Handle>,
 }
 impl SmashbrosResource {
     fn new() -> Self {
@@ -68,11 +70,19 @@ impl SmashbrosResource {
             );
             
         }
+        let mut order_image_list: HashMap<i32, iced_winit::image::Handle> = HashMap::new();
+        for order in 0..4 {
+            order_image_list.insert(
+                order,
+                iced_winit::image::Handle::from_path(format!( "resource/result_player_order_{}_color.png", order ))
+            );
+        }
 
         Self {
             version: text.version,
             character_list: text.character_list,
             icon_list: icon_list,
+            order_image_list: order_image_list,
         }
     }
 
@@ -82,6 +92,14 @@ impl SmashbrosResource {
         }
 
         Some(self.icon_list[&character_name].clone())
+    }
+
+    pub fn get_order_handle(&self, order: i32) -> Option<iced_winit::image::Handle> {
+        if order <= 0 || 5 <= order {
+            return None;
+        }
+
+        Some(self.order_image_list[&order].clone())
     }
 }
 
@@ -130,47 +148,27 @@ impl BattleHistory {
         }
     }
 
-    /// battle_data コレクションへ戦歴情報を挿入
-    // [test data]
-    // use smabrog-db
-    // db.createCollection("battle_data_col")
-    /*
+    /// なにかのクエリを非同期でタイムアウト付きで実行する
+    pub fn do_query_with_timeout<F, T>(future: F) -> Option<T>
+    where
+        F: async_std::future::Future<Output = Result<T, mongodb::error::Error>>, 
     {
-        "_id": {
-            "$oid": "{}"
-        },
-        "start_time": "2021-05-28T16:51:45.000000000+09:00",
-        "end_time": "2021-05-28T16:58:30.000000000+09:00",
-        "player_count": 2,
-        "rule_name": "Stock",
+        async_std::task::block_on(async {
+            let timeout = async_std::future::timeout(std::time::Duration::from_secs(5), future).await;
 
-        "max_time": [7, 0],
-        "max_stock_list": [3, 3],
-        "max_hp_list": [0, 0],
-        
-        "chara_list": ["KIRBY", "KIRBY"],
-        "group_list": ["RED", "BLUE"],
-        "stock_list": [3, 0],
-        "order_list": [2, 1],
-        "power_list": [10000000, 0]
-    }
-    */
-    pub fn insert_with_2(&mut self, data: &SmashbrosData) -> Option<String> {
-        let database = self.db_client.database("smabrog-db");
-        let collection_ref = database.collection("battle_data_col").clone();
-        let serialized_data = bson::to_bson(data).unwrap();
-        let data_document = serialized_data.as_document().unwrap();
+            match timeout {
+                Ok(result) => match result {
+                    Ok(result_object) => Some(result_object),
+                    Err(e) => {
+                        // mongodb::error
+                        log::info!("[db_err] {:?}", e);
 
-        async_std::task::block_on(async move {
-            match collection_ref.insert_one(data_document.to_owned(), None).await {
-                Ok(ret) => {
-                    println!("[ok] finished battle. {:?}", ret);
-
-                    // 何故か ObjectId が再帰的に格納されている
-                    Some(ret.inserted_id.as_object_id().unwrap().to_hex())
+                        None
+                    },
                 },
                 Err(e) => {
-                    println!("[err] {:?}", e);
+                    // async_std::timeout::error
+                    log::error!("[timeout] {:?}", e);
 
                     None
                 }
@@ -178,30 +176,77 @@ impl BattleHistory {
         })
     }
 
+    /// battle_data コレクションへ戦歴情報を挿入
+    pub fn insert_data(&mut self, data: &SmashbrosData) -> Option<String> {
+        let database = self.db_client.database("smabrog-db");
+        let collection_ref = database.collection("battle_data_col").clone();
+        let serialized_data = bson::to_bson(data).unwrap();
+        let data_document = serialized_data.as_document().unwrap();
+
+        match Self::do_query_with_timeout(
+            collection_ref.insert_one( data_document.to_owned(), None )
+        ) {
+            // 何故か ObjectId が再帰的に格納されている
+            Some(result) => Some(result.inserted_id.as_object_id().unwrap().to_hex()),
+            None => return None,
+        }        
+    }
+
     /// battle_data コレクションから戦歴情報を 直近10件 取得
-    pub fn find_with_2_limit_10(&self) -> Option<Vec<SmashbrosData>> {
+    pub fn find_data_limit_10(&self) -> Option<Vec<SmashbrosData>> {
         let database = self.db_client.database("smabrog-db");
         let collection_ref = database.collection("battle_data_col").clone();
 
-        // mongodb のポインタ的なものをもらう
-        let mut cursor: Cursor = match async_std::task::block_on(async move {
+        /* mongodb のポインタ的なものをもらう */
+        let mut cursor: Cursor = match async_std::task::block_on(async {
+            let timeout = async_std::future::timeout(std::time::Duration::from_secs(5), 
+                collection_ref.find(
+                    None,
+                    FindOptions::builder()
+                        .sort(doc! { "_id": -1 })
+                        .limit(10)
+                        .build()
+                )
+            ).await;
+
+            match timeout {
+                Ok(cursor) => match cursor {
+                    Ok(cursor) => Ok(cursor),
+                    Err(e) => Err(anyhow::anyhow!( format!("{:?}", e) )),   // mongodb::error -> anyhow
+                },
+                Err(e) => Err(anyhow::anyhow!( format!("{:?}", e) ))    // async_std::timeout::error -> anyhow
+            }
+        }) {
+            Ok(cursor) => cursor,
+            Err(e) => {
+                log::error!("[err] {:?}", e);
+                return None
+            },
+        };
+        // */
+
+        /* mongodb のポインタ的なものをもらう *
+        // 上記コードを下記に変更すると STATUS_STACK_OVERFLOW で落ちる(やってる内容は同じだし謎のバグ)
+        // async_std::task::block_on を読んだ時点で起こるっぽい(insert_with_2 は普通に実行できるから更に謎)
+        // アタッチデバッグしたら async-executor という crate の run あたりでスタックが溢れてるっぽい
+        let mut cursor: Cursor = match Self::do_query_with_timeout(
             collection_ref.find(
                 None,
                 FindOptions::builder()
                     .sort(doc! { "_id": -1 })
                     .limit(10)
                     .build()
-            ).await
-        }) {
-            Ok(cursor) => cursor,
-            Err(_) => return None
+            )
+        ) {
+            Some(cursor) => cursor,
+            None => return None,
         };
-
+        // */
+        
         // ポインタ的 から ドキュメントを取得して、コンテナに格納されたのを積む
         use async_std::prelude::*;
-        use async_std::task::block_on;
         let mut data_list: Vec<SmashbrosData> = Vec::new();
-        while let Some(document) = block_on(async{ cursor.next().await }) {
+        while let Some(document) = async_std::task::block_on(async{ cursor.next().await }) {
             let data: SmashbrosData = bson::from_bson(bson::Bson::Document(document.unwrap())).unwrap();
             data_list.push(data);
         }
@@ -244,6 +289,7 @@ pub struct ValueGuesser<K: Clone + Eq + std::hash::Hash> {
     max_border: i32,
 }
 impl<K: std::hash::Hash + Clone + Eq> ValueGuesser<K> {
+    /// @param value 初期値
     pub fn new(value: K) -> Self {
         Self {
             value_count_list: HashMap::new(),
@@ -251,6 +297,13 @@ impl<K: std::hash::Hash + Clone + Eq> ValueGuesser<K> {
             max_count: 0,
             max_border: 5,
         }
+    }
+
+    /// 試行回数の設定 初期値:5
+    pub fn set_border(mut self, max_border: i32) -> Self {
+        self.max_border = max_border;
+
+        self
     }
 
     /// 値が決定したかどうか
@@ -269,6 +322,7 @@ impl<K: std::hash::Hash + Clone + Eq> ValueGuesser<K> {
     pub fn set(&mut self, value: K) {
         self.max_value = value.clone();
         self.max_count = self.max_border;
+        *self.value_count_list.entry(value).or_insert(0) = self.max_border;
     }
 
     /// 値を推測する
@@ -327,6 +381,7 @@ impl std::str::FromStr for BattleRule {
         }
     }
 }
+
 
 /// データトレイト
 pub trait SmashbrosDataTrait {
@@ -932,7 +987,7 @@ impl SmashbrosData {
 
             self.chara_list.push( ValueGuesser::new(SmashbrosData::CHARACTER_NAME_UNKNOWN.to_string()) );
             self.group_list.push( ValueGuesser::new(PlayerGroup::Unknown) );
-            self.stock_list.push( ValueGuesser::new(-1) );
+            self.stock_list.push( ValueGuesser::new(-1).set_border(2) );
             self.order_list.push( ValueGuesser::new(-1) );
             self.power_list.push( ValueGuesser::new(-1) );
         }
@@ -974,11 +1029,37 @@ impl SmashbrosData {
         }
 
         self.db_collection_id = match self.player_count {
-            2 => unsafe{BATTLE_HISTORY.get_mut()}.insert_with_2(self),
+            2 => unsafe{BATTLE_HISTORY.get_mut()}.insert_data(self),
             _ => None,
         };
 
         self.saved_time = Some(std::time::Instant::now());
+    }
+
+    /// 制限時間の推測
+    pub fn guess_max_time(&mut self, maybe_time: u64) {
+        if self.is_decided_max_time() {
+            return;
+        }
+
+        // ルールによる制限
+        match self.get_rule() {
+            BattleRule::Time => {
+                if maybe_time < 2*60 || 3*60 < maybe_time {
+                    return;
+                }
+            },
+            BattleRule::Stock | BattleRule::Stamina => {
+                if maybe_time < 3*60 || 7*60 < maybe_time {
+                    return;
+                }
+            },
+            _ => (),
+        }
+
+        self.set_max_time(std::time::Duration::from_secs(maybe_time));
+
+        log::info!("max time {:?}s", maybe_time);
     }
 
     /// 最大ストック数の推測
@@ -987,9 +1068,19 @@ impl SmashbrosData {
             return;
         }
 
+        // ルールによる制限
+        match self.get_rule() {
+            BattleRule::Stock | BattleRule::Stamina => {
+                if maybe_stock < 1 || 3 < maybe_stock {
+                    return;
+                }
+            },
+            _ => (),
+        }
+
         (*self.max_stock_list.as_mut().unwrap())[player_number as usize].guess(&maybe_stock);
 
-        println!("max stock {}p: {}? => {:?}", player_number+1, maybe_stock, self.get_max_stock(player_number));
+        log::info!("max stock {}p: {}? => {:?}", player_number+1, maybe_stock, self.get_max_stock(player_number));
     }
     /// 最大ストック数は確定しているか
     pub fn all_decided_max_stock(&self) -> bool {
@@ -1003,7 +1094,7 @@ impl SmashbrosData {
 
         (*self.max_hp_list.as_mut().unwrap())[player_number as usize].guess(&maybe_hp);
 
-        println!("max hp {}p: {}? => {:?}", player_number+1, maybe_hp, self.get_max_hp(player_number));
+        log::info!("max hp {}p: {}? => {:?}", player_number+1, maybe_hp, self.get_max_hp(player_number));
     }
     /// 最大HPは確定しているか
     pub fn all_decided_max_hp(&self) -> bool {
@@ -1040,7 +1131,7 @@ impl SmashbrosData {
             }
         }
 
-        println!("chara {}p: \"{}\"? => {:?}", player_number+1, maybe_character_name, self.get_character(player_number));
+        log::info!("chara {}p: \"{}\"? => {:?}", player_number+1, maybe_character_name, self.get_character(player_number));
     }
     /// 全員分が使用しているキャラクターは確定しているか
     pub fn all_decided_character_name(&self) -> bool {
@@ -1049,16 +1140,28 @@ impl SmashbrosData {
 
     /// プレイヤーのストックの推測
     pub fn guess_stock(&mut self, player_number: i32, maybe_stock: i32) {
-        if self.stock_list[player_number as usize].get() == maybe_stock {
+        if self.stock_list[player_number as usize].is_decided()
+            && self.stock_list[player_number as usize].get() == maybe_stock
+        {
             return;
         }
 
-        if !self.stock_list[player_number as usize].is_decided() {
-            // 初回代入
-            self.stock_list[player_number as usize].guess(&maybe_stock);
+        // ルールによる制限
+        match self.get_rule() {
+            BattleRule::Stock | BattleRule::Stamina => {
+                if maybe_stock < 1 || 3 < maybe_stock {
+                    return;
+                }
+            },
+            _ => (),
         }
 
-        println!("stock {}p: {}? => {:?}", player_number+1, maybe_stock, self.get_stock(player_number));
+        self.stock_list[player_number as usize].guess(&maybe_stock);
+        if self.stock_list[player_number as usize].is_decided() {
+            self.stock_list[player_number as usize].set(maybe_stock)
+        }
+
+        log::info!("stock {}p: {}? => {:?}", player_number+1, maybe_stock, self.get_stock(player_number));
     }
     /// 全員分のストックは確定しているか
     pub fn all_decided_stock(&self) -> bool {
@@ -1080,7 +1183,7 @@ impl SmashbrosData {
                     let other_player_number = self.player_count-1 - player_number;
                     let other_maybe_order = self.player_count - (maybe_order-1);
                     self.order_list[other_player_number as usize].set(other_maybe_order);
-                    println!( "order {}p: {}? => {:?}", other_player_number+1, other_maybe_order, self.get_order(other_player_number) );
+                    log::info!( "order {}p: {}? => {:?}", other_player_number+1, other_maybe_order, self.get_order(other_player_number) );
                 },
                 _ => ()
             };
@@ -1099,7 +1202,7 @@ impl SmashbrosData {
             };
         }
 
-        println!( "order {}p: {}? => {:?}", player_number+1, maybe_order, self.get_order(player_number));
+        log::info!( "order {}p: {}? => {:?}", player_number+1, maybe_order, self.get_order(player_number));
     }
     /// 全員分の順位は確定しているか
     pub fn all_decided_order(&self) -> bool {
@@ -1114,7 +1217,7 @@ impl SmashbrosData {
 
         self.power_list[player_number as usize].guess(&maybe_power);
 
-        println!("power {}p: {}? => {:?}", player_number+1, maybe_power, self.get_power(player_number));
+        log::info!("power {}p: {}? => {:?}", player_number+1, maybe_power, self.get_power(player_number));
     }
     /// 全員分の戦闘力は確定しているか
     pub fn all_decided_power(&self) -> bool {

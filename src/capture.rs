@@ -323,7 +323,7 @@ impl CaptureFromWindow {
             };
 
             if scene_judgment.is_near_match() {
-                println!("found window:{:3.3}% {:?}", scene_judgment.prev_match_ratio, own.content_area);
+                log::info!("found window:{:3.3}% {:?}", scene_judgment.prev_match_ratio, own.content_area);
                 return true;
             }
 
@@ -387,7 +387,7 @@ impl CaptureTrait for CaptureFromDesktop {
 impl CaptureFromDesktop {
     pub fn new() -> opencv::Result<Self> {
         // デスクトップ画面から ReadyToFight を検出して位置を特定する
-        println!("finding capture area from desktop...");
+        log::info!("finding capture area from desktop...");
         let desktop_handle = 0 as winapi::shared::windef::HWND;
 
         // モニターの左上の座標を取得
@@ -409,7 +409,11 @@ impl CaptureFromDesktop {
         resolution_list.extend( (81..96).collect::<Vec<i32>>() );
         resolution_list.extend( (97..100).collect::<Vec<i32>>() );
         resolution_list.extend( (101..120).collect::<Vec<i32>>() );
+        use std::io::Write;
+        let mut found = false;
         for resolution in resolution_list {
+            let gui_status = format!("\rfinding dpi=[{}]", resolution);
+            
             let mut mat = match capture_dc.get_mat(desktop_handle, None, Some(monitor_lefttop)) {
                 Ok(v) => v,
                 Err(_) => continue,
@@ -437,13 +441,20 @@ impl CaptureFromDesktop {
             content_area.width = resolution * base_resolution.width;
             content_area.height = resolution * base_resolution.height;
             if scene_judgment.is_near_match() {
-                println!("found dpi:{} {:?}", resolution, content_area);
+                log::info!("found dpi:{} {:?}", resolution, content_area);
+                found = true;
 
                 find_resolution = resolution;
-                imgproc::rectangle(&mut mat, content_area, core::Scalar::new(0.0, 0.0, 255.0, 255.0), 3, imgproc::LINE_8, 0).unwrap();
+                imgproc::rectangle(&mut mat,
+                    core::Rect { x:content_area.x-2, y:content_area.y-2, width:content_area.width+4, height:content_area.height+4 },
+                    core::Scalar::new(0.0, 0.0, 255.0, 255.0), 1, imgproc::LINE_8, 0).unwrap();
                 imgcodecs::imwrite("found_capture_area.png", &mat, &core::Vector::from(vec![])).unwrap();
                 break;
             }
+        }
+        if !found {
+            log::warn!("\rnot found smash bros.");
+            return Err(opencv::Error::new(0, "Not found capture area.".to_string()));
         }
 
         Ok(Self {
@@ -455,6 +466,8 @@ impl CaptureFromDesktop {
             monitor_lefttop: monitor_lefttop
         })
     }
+
+
 }
 
 /// デフォルト用の空 Mat
@@ -485,7 +498,7 @@ impl AsRef<Codec> for Codec {
 impl Codec {
     /// インストールされているコーデックを照合して初期化
     pub fn find_codec() -> Self {
-        println!("find installed codec... {:?}", videoio::get_writer_backends());
+        log::info!("find installed codec... {:?}", videoio::get_writer_backends());
         let fourcc_list = [b"HEVC", b"H265", b"X264", b"FMP4", b"ESDS", b"MP4V", b"MJPG"];
         let extension_list = ["mp4", "avi"];
         let mut writer: videoio::VideoWriter = videoio::VideoWriter::default().unwrap();
@@ -515,7 +528,7 @@ impl Codec {
                         15.0, core::Size{width: 640, height: 360}, true
                     ).unwrap_or(false);
                     if ret {
-                        println!("codec initialized: {:?} ({:?}) to {:?}", backend, std::str::from_utf8(fourcc).unwrap(), &file_name);
+                        log::info!("codec initialized: {:?} ({:?}) to {:?}", backend, std::str::from_utf8(fourcc).unwrap(), &file_name);
                         break 'find_backends;
                     }
 
