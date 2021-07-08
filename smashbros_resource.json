@@ -1,5 +1,5 @@
 {
-  "version": "11",
+  "version": "12",
   "character_list": {
       "ALEX": "アレックス",
       "BANJOKAZOOIE": "バンジョー＆カズーイ",
@@ -31,6 +31,7 @@
       "INKLING": "インクリング",
       "JOKER": "ジョーカー",
       "KAMUI": "カムイ",
+      "KAZUYA": "カズヤ",
       "KEN": "ケン",
       "KINGKROOL": "キングクルール",
       "KIRBY": "カービィ",
@@ -128,6 +129,7 @@
     "INKLING": "chara_2_inkling_00.png",
     "JOKER": "chara_2_jack_00.png",
     "KAMUI": "chara_2_kamui_00.png",
+    "KAZUYA": "chara_2_demon_00.png",
     "KEN": "chara_2_ken_00.png",
     "KINGKROOL": "chara_2_krool_00.png",
     "KIRBY": "chara_2_kirby_00.png",
