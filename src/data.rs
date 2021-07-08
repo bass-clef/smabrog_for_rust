@@ -161,7 +161,7 @@ impl BattleHistory {
                     Ok(result_object) => Some(result_object),
                     Err(e) => {
                         // mongodb::error
-                        log::info!("[db_err] {:?}", e);
+                        log::error!("[db_err] {:?}", e);
 
                         None
                     },
@@ -197,7 +197,7 @@ impl BattleHistory {
         let database = self.db_client.database("smabrog-db");
         let collection_ref = database.collection("battle_data_col").clone();
 
-        /* mongodb のポインタ的なものをもらう */
+        // mongodb のポインタ的なものをもらう
         let mut cursor: Cursor = match async_std::task::block_on(async {
             let timeout = async_std::future::timeout(std::time::Duration::from_secs(5), 
                 collection_ref.find(
@@ -223,26 +223,7 @@ impl BattleHistory {
                 return None
             },
         };
-        // */
 
-        /* mongodb のポインタ的なものをもらう *
-        // 上記コードを下記に変更すると STATUS_STACK_OVERFLOW で落ちる(やってる内容は同じだし謎のバグ)
-        // async_std::task::block_on を読んだ時点で起こるっぽい(insert_with_2 は普通に実行できるから更に謎)
-        // アタッチデバッグしたら async-executor という crate の run あたりでスタックが溢れてるっぽい
-        let mut cursor: Cursor = match Self::do_query_with_timeout(
-            collection_ref.find(
-                None,
-                FindOptions::builder()
-                    .sort(doc! { "_id": -1 })
-                    .limit(10)
-                    .build()
-            )
-        ) {
-            Some(cursor) => cursor,
-            None => return None,
-        };
-        // */
-        
         // ポインタ的 から ドキュメントを取得して、コンテナに格納されたのを積む
         use async_std::prelude::*;
         let mut data_list: Vec<SmashbrosData> = Vec::new();
