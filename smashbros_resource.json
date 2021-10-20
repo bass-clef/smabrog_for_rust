@@ -1,5 +1,5 @@
 {
-  "version": "12",
+  "version": "13",
   "character_list": {
       "ALEX": "アレックス",
       "BANJOKAZOOIE": "バンジョー＆カズーイ",
@@ -85,6 +85,7 @@
       "SIMON": "シモン",
       "SNAKE": "スネーク",
       "SONIC": "ソニック",
+      "SORA": "ソラ",
       "STEVE": "スティーブ",
       "TERRY": "テリー",
       "TOONLINK": "トゥーンリンク",
@@ -183,6 +184,7 @@
     "SIMON": "chara_2_simon_00.png",
     "SNAKE": "chara_2_snake_00.png",
     "SONIC": "chara_2_sonic_00.png",
+    "SORA": "chara_2_sora_00.png",
     "STEVE": "chara_2_pickel_00.png",
     "TERRY": "chara_2_dolly_00.png",
     "TOONLINK": "chara_2_toonlink_00.png",
