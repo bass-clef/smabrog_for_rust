@@ -308,9 +308,9 @@ impl<K: std::hash::Hash + Clone + Eq> ValueGuesser<K> {
 
     /// 値を推測する
     /// using clone.
-    pub fn guess(&mut self, value: &K) {
+    pub fn guess(&mut self, value: &K) -> bool {
         if self.is_decided() {
-            return;
+            return false;
         }
 
         *self.value_count_list.entry(value.clone()).or_insert(0) += 1;
@@ -318,7 +318,10 @@ impl<K: std::hash::Hash + Clone + Eq> ValueGuesser<K> {
         if self.max_count < self.value_count_list[value] {
             self.max_value = value.clone();
             self.max_count = self.value_count_list[value];
+            return true;
         }
+
+        return false;
     }
 }
 
@@ -1137,12 +1140,13 @@ impl SmashbrosData {
             _ => (),
         }
 
-        self.stock_list[player_number as usize].guess(&maybe_stock);
+        if self.stock_list[player_number as usize].guess(&maybe_stock) {
+            log::info!("stock {}p: {}? => {:?}", player_number+1, maybe_stock, self.get_stock(player_number));
+        }
+
         if self.stock_list[player_number as usize].is_decided() {
             self.stock_list[player_number as usize].set(maybe_stock)
         }
-
-        log::info!("stock {}p: {}? => {:?}", player_number+1, maybe_stock, self.get_stock(player_number));
     }
     /// 全員分のストックは確定しているか
     pub fn all_decided_stock(&self) -> bool {
@@ -1196,9 +1200,9 @@ impl SmashbrosData {
             return;
         }
 
-        self.power_list[player_number as usize].guess(&maybe_power);
-
-        log::info!("power {}p: {}? => {:?}", player_number+1, maybe_power, self.get_power(player_number));
+        if self.power_list[player_number as usize].guess(&maybe_power) {
+            log::info!("power {}p: {}? => {:?}", player_number+1, maybe_power, self.get_power(player_number));
+        }
     }
     /// 全員分の戦闘力は確定しているか
     pub fn all_decided_power(&self) -> bool {

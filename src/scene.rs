@@ -594,7 +594,7 @@ impl HamVsSpamScene {
         // 近似白黒処理して
         let mut temp_capture_image = core::Mat::default();
         let mut work_capture_image = core::Mat::default();
-        imgproc::threshold(&gray_capture_image, &mut work_capture_image, 250.0, 255.0, imgproc::THRESH_BINARY)?;
+        imgproc::threshold(&gray_capture_image, &mut work_capture_image, 200.0, 255.0, imgproc::THRESH_BINARY)?;
         core::bitwise_not(&work_capture_image, &mut temp_capture_image, &core::no_array()?)?;
 
         // プレイヤー毎の位置で処理する
@@ -611,7 +611,7 @@ impl HamVsSpamScene {
             // 高さそんなにいらないので適当に小さくする
             let player_name_area = core::Rect {
                 x: player_area_width*player_count +30, y: 0,        // 30:{N}P のプレイヤー表示の幅
-                width: player_area_width -10 -30, height: height/7  // 10:稲妻が処理後に黒四角形になって文字領域として誤認されるのを防ぐため
+                width: player_area_width -20 -30, height: height/7  // 10:稲妻が処理後に黒四角形になって文字領域として誤認されるのを防ぐため
             };
             let mut name_area_image = core::Mat::roi(&temp_capture_image, player_name_area)?;
             let gray_name_area_image = core::Mat::roi(&work_capture_image, player_name_area)?;
@@ -620,10 +620,9 @@ impl HamVsSpamScene {
             let name_contour_image = utils::trimming_any_rect(
                 &mut name_area_image, &gray_name_area_image, Some(5), None, None, false, None)?;
             utils::cvt_color_to(&name_contour_image, &mut name_area_image, ColorFormat::RGB as i32)?;
-            
+
             // tesseract でキャラ名取得して, 余計な文字を排除
             let text = &async_std::task::block_on(utils::run_ocr_with_upper_alpha(&name_area_image)).unwrap();
-            log::info!("regex prev raw name [{:?}]", text);
             if let Some(caps) = re.captures( text ) {
                 smashbros_data.guess_character_name( player_count, String::from(&caps[1]) );
             }
@@ -1023,7 +1022,7 @@ impl Default for ResultScene {
                     imgcodecs::imread(&(path.clone() + "color.png"), imgcodecs::IMREAD_UNCHANGED).unwrap(),
                     Some(imgcodecs::imread(&(path + "mask.png"), imgcodecs::IMREAD_UNCHANGED).unwrap())
                 ).unwrap()
-                .set_border(0.99)
+                .set_border(0.985)
             );
         }
 
@@ -1221,7 +1220,7 @@ impl ResultScene {
 pub struct SceneManager {
     pub capture: Box<dyn CaptureTrait>,
     pub scene_loading: LoadingScene,
-    pub scene_list: Vec<Box<dyn SceneTrait + 'static>>, // koko: 'staticいらないのでは？
+    pub scene_list: Vec<Box<dyn SceneTrait>>,
     pub now_scene: SceneList,
     pub smashbros_data: SmashbrosData,
     pub dummy_local_time: chrono::DateTime<chrono::Local>,

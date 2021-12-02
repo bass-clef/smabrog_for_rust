@@ -409,7 +409,6 @@ impl CaptureFromDesktop {
         resolution_list.extend( (81..96).collect::<Vec<i32>>() );
         resolution_list.extend( (97..100).collect::<Vec<i32>>() );
         resolution_list.extend( (101..120).collect::<Vec<i32>>() );
-        use std::io::Write;
         let mut found = false;
         for resolution in resolution_list {
             let gui_status = format!("\rfinding dpi=[{}]", resolution);

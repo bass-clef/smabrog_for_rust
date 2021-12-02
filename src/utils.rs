@@ -88,8 +88,8 @@ pub mod utils {
             let rect = imgproc::bounding_rect(&area_contours)?;
             any_rect.x = std::cmp::min(any_rect.x, rect.x);
             any_rect.y = std::cmp::min(any_rect.y, rect.y);
-            any_rect.width = std::cmp::max(any_rect.x, rect.x + rect.width);
-            any_rect.height = std::cmp::max(any_rect.y, rect.y + rect.height);
+            any_rect.width = std::cmp::max(any_rect.width, rect.x + rect.width);
+            any_rect.height = std::cmp::max(any_rect.height, rect.y + rect.height);
         }
 
         let mut trimming_rect = core::Rect {
@@ -99,6 +99,7 @@ pub mod utils {
             height: std::cmp::min(any_rect.height + margin.unwrap_or(0), height)};
         trimming_rect.width -= trimming_rect.x + 1;
         trimming_rect.height -= trimming_rect.y + 1;
+
         match core::Mat::roi(&src, trimming_rect) {
             Ok(result_image) => Ok(result_image),
             // size が 0 近似で作成できないときが予想されるので、src を返す
@@ -127,6 +128,7 @@ pub mod utils {
                 .set_variable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZ").unwrap()
                 .recognize()?
                 .get_text().unwrap_or("".to_string())
+                .replace("\n", "")
         )
     }
     /// OCR(数値を検出)
