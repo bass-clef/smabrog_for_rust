@@ -28,16 +28,16 @@ impl SmashBrogEngine {
     pub fn change_capture_mode(&mut self, capture_mode: &CaptureMode) -> opencv::Result<()> {
         let capture: opencv::Result<Box<dyn CaptureTrait>> = match capture_mode {
             CaptureMode::Desktop(_) => match CaptureFromDesktop::new() {
-                Err(e) => return Err(opencv::Error::new(0, format!("{:?}", e))),
+                Err(e) => return Err(e),
                 Ok(capture) => Ok(Box::new(capture)),
             },
             CaptureMode::Empty(_) => Ok(Box::new(CaptureFromEmpty::new().unwrap())),
             CaptureMode::VideoDevice(_, device_id, _) => match CaptureFromVideoDevice::new(*device_id) {
-                Err(e) => return Err(opencv::Error::new(0, format!("{:?}", e))),
+                Err(e) => return Err(e),
                 Ok(capture) => Ok(Box::new(capture)),
             },
-            CaptureMode::Window(_, win_caption, win_class) => match CaptureFromWindow::new(win_caption, win_class) {
-                Err(e) => return Err(opencv::Error::new(0, format!("{:?}", e))),
+            CaptureMode::Window(_, win_caption) => match CaptureFromWindow::new(win_caption) {
+                Err(e) => return Err(e),
                 Ok(capture) => Ok(Box::new(capture)),
             },
         };

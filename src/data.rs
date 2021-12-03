@@ -1159,16 +1159,21 @@ impl SmashbrosData {
             return;
         }
 
-        self.order_list[player_number as usize].guess(&maybe_order);
+        if self.order_list[player_number as usize].guess(&maybe_order) {
+            log::info!( "order {}p: {}? => {:?}", player_number+1, maybe_order, self.get_order(player_number));
+        }
 
-        if self.order_list[player_number as usize].is_decided() {
+        if self.is_decided_order(player_number) {
             // 信頼性が高い順位は他のユーザーの順位をも確定させる
             match self.player_count {
                 2 => {
                     let other_player_number = self.player_count-1 - player_number;
                     let other_maybe_order = self.player_count - (maybe_order-1);
-                    self.order_list[other_player_number as usize].set(other_maybe_order);
-                    log::info!( "order {}p: {}? => {:?}", other_player_number+1, other_maybe_order, self.get_order(other_player_number) );
+                    if !self.is_decided_order(other_player_number) {
+                        if self.order_list[other_player_number as usize].guess(&other_maybe_order) {
+                            log::info!( "order by {}p {}p: {}? => {:?}", player_number+1, other_player_number+1, other_maybe_order, self.get_order(other_player_number) );
+                        }
+                    }
                 },
                 _ => ()
             };
@@ -1186,8 +1191,6 @@ impl SmashbrosData {
                 _ => ()
             };
         }
-
-        log::info!( "order {}p: {}? => {:?}", player_number+1, maybe_order, self.get_order(player_number));
     }
     /// 全員分の順位は確定しているか
     pub fn all_decided_order(&self) -> bool {

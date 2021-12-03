@@ -76,8 +76,8 @@ fn make_gui_run() -> Result<(), iced_winit::Error> {
     
     let renderer_settings = iced_wgpu::Settings {
         antialiasing: Some(iced_wgpu::settings::Antialiasing::MSAAx4),
-        default_text_size: 18,
-        default_font: Some(include_bytes!("../fonts/NotoSans-Regular.ttf")),
+        default_text_size: 16,
+        default_font: Some(include_bytes!("../fonts/Mamelon-5-Hi-Regular.otf")),
         ..iced_wgpu::Settings::default()
     };
 
