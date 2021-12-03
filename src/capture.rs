@@ -18,7 +18,10 @@ use crate::scene::{
     ReadyToFightScene,
     SceneTrait
 };
-use crate::utils::utils::to_wchar;
+use crate::utils::utils::{
+    cvt_color_to,
+    to_wchar,
+};
 
 
 /// Mat,DCを保持するクラス。毎回 Mat を作成するのはやはりメモリコストが高すぎた。
@@ -138,7 +141,14 @@ impl CaptureDC {
             // BITMAP 情報取得(BITMAP経由でしかデスクトップの時の全体の大きさを取得する方法がわからなかった(!GetWindowRect, !GetClientRect, !GetDeviceCaps))
             // しかもここの bmBits をコピーしたらどっかわからん領域をコピーしてしまう(見た感じ過去に表示されていた内容からメモリが更新されてない？？？)
             let bitmap_handle = GetCurrentObject(dc_handle, OBJ_BITMAP) as HBITMAP;
-            GetObjectW(bitmap_handle as HANDLE, std::mem::size_of::<BITMAP>() as i32, &mut self.bitmap as PBITMAP as LPVOID);
+            if 0 == GetObjectW(bitmap_handle as HANDLE, std::mem::size_of::<BITMAP>() as i32, &mut self.bitmap as PBITMAP as LPVOID) {
+                // ビットマップ情報取得失敗, 権限が足りないとか、GPUとかで直接描画してるとかだと取得できないっぽい
+                log::error!("not get object bitmap. continue by GetClientRect and RGBA.");
+                self.bitmap.bmWidth = self.width;
+                self.bitmap.bmHeight = self.height;
+                self.bitmap.bmBitsPixel = 32;   // RGBA
+            }
+
             self.width = self.bitmap.bmWidth;
             self.height = self.bitmap.bmHeight;
 
@@ -254,7 +264,6 @@ impl CaptureFromVideoDevice {
 pub struct CaptureFromWindow {
     capture_dc: CaptureDC,
     pub win_caption: String,
-    pub win_class: String,
     win_handle: winapi::shared::windef::HWND,
     pub prev_image: core::Mat,
     pub content_area: core::Rect,
@@ -264,6 +273,7 @@ impl CaptureTrait for CaptureFromWindow {
         if self.win_handle.is_null() {
             return Ok(unsafe{core::Mat::new_rows_cols(360, 640, core::CV_8UC4)}.unwrap());
         }
+
         if let Ok(mat) = self.capture_dc.get_mat(self.win_handle, Some(self.content_area), None) {
             let resize = core::Size { width: 640, height: 360 };
 
@@ -279,17 +289,19 @@ impl CaptureTrait for CaptureFromWindow {
     }
 }
 impl CaptureFromWindow {
-    pub fn new(win_caption: &str, win_class: &str) -> opencv::Result<Self> {
+    pub fn new(win_caption: &str) -> opencv::Result<Self> {
         let win_handle = unsafe {
             winapi::um::winuser::FindWindowW(
-                if win_class.is_empty() { std::ptr::null_mut() } else { to_wchar(win_class) },
+                std::ptr::null_mut(),
                 if win_caption.is_empty() { std::ptr::null_mut() } else { to_wchar(win_caption) }
             )
         };
         if win_handle.is_null() {
-            return Err( opencv::Error::new(0, "window handle is null".to_string()) );
+            return Err( opencv::Error::new(0, format!("window handle is null w[{:?}]", win_caption)) );
         }
+        log::info!("found window handle: {}", win_handle as i64);
 
+        // ウィンドウの大きさの設定
         let mut client_rect = winapi::shared::windef::RECT { left:0, top:0, right:0, bottom:0 };
         unsafe { winapi::um::winuser::GetClientRect(win_handle, &mut client_rect) };
         let mut content_area = core::Rect {
@@ -297,15 +309,18 @@ impl CaptureFromWindow {
             width: client_rect.right, height: client_rect.bottom
         };
 
+        // 自身を作成して、予め CaptureDC へ大きさを渡しておく
         let mut own = Self {
             win_caption: win_caption.to_string(),
-            win_class: win_class.to_string(),
             win_handle: win_handle,
             prev_image: core::Mat::default(),
             content_area: content_area,
             capture_dc: CaptureDC::default(),
         };
+        own.capture_dc.width = own.content_area.width;
+        own.capture_dc.height = own.content_area.height;
 
+        // 指定された領域で探す
         let mut ready_to_fight_scene = ReadyToFightScene::new_gray();
         let mut find_capture = |own: &mut Self, content_area: &core::Rect, | -> bool {
             let capture_image = own.get_mat().unwrap();
@@ -356,6 +371,40 @@ impl CaptureFromWindow {
 
         Ok(own)
     }
+
+    // EnumWindows 用のコールバック関数, lparam としてクロージャをもらい、ウィンドウを列挙して渡す
+    unsafe extern "system" fn enum_callback<T: FnMut(String)>(hwnd: winapi::shared::windef::HWND, lparam: isize) -> i32 {
+        if winapi::um::winuser::IsWindowVisible(hwnd) == winapi::shared::minwindef::FALSE {
+            return winapi::shared::minwindef::TRUE;
+        }
+
+        const BUF_SIZE: usize = 512;
+        let mut win_window_buffer: [u16; BUF_SIZE] = [0; BUF_SIZE];
+        let writed_length = GetWindowTextW(hwnd, win_window_buffer.as_mut_ptr(), BUF_SIZE as i32);
+        if 0 < writed_length {
+            let window_text_func = &mut *(lparam as *mut T);
+            window_text_func(String::from_utf16_lossy(&win_window_buffer[0..writed_length as usize]));
+        }
+
+        winapi::shared::minwindef::TRUE
+    }
+
+    // EnumWindows のコールバックをクロージャで呼べるようにするためのラッパー
+    fn enum_windows<T: FnMut(String)>(mut window_text_func: T) {
+        unsafe {
+            EnumWindows(Some(Self::enum_callback::<T>), &mut window_text_func as *mut _ as isize);
+        }
+    }
+
+    /// ウィンドウ名を列挙して返す
+    pub fn get_window_list() -> Vec<String> {
+        let mut window_list: Vec<String> = Vec::new();
+        Self::enum_windows(|win_caption: String| {
+            window_list.push(win_caption);
+        });
+
+        window_list
+    }
 }
 
 /// デスクトップ から Mat
@@ -403,12 +452,7 @@ impl CaptureFromDesktop {
         let mut content_area = core::Rect { x: 0, y: 0, width: 0, height: 0 };
         let mut find_resolution: i32 = 40;
         let base_resolution = core::Size { width: 16, height: 9 };
-        let mut resolution_list = vec![40, 53, 80, 96, 100, 120];
-        resolution_list.extend( (41..53).collect::<Vec<i32>>() );   // Vec が slice に対する ops::AddAssign 実装してないってマ？？？
-        resolution_list.extend( (54..80).collect::<Vec<i32>>() );
-        resolution_list.extend( (81..96).collect::<Vec<i32>>() );
-        resolution_list.extend( (97..100).collect::<Vec<i32>>() );
-        resolution_list.extend( (101..120).collect::<Vec<i32>>() );
+        let mut resolution_list = vec![40, 44, 50, 53, 60, 64, 70, 80, 90, 96, 100, 110, 120];
         let mut found = false;
         for resolution in resolution_list {
             let gui_status = format!("\rfinding dpi=[{}]", resolution);
@@ -452,8 +496,7 @@ impl CaptureFromDesktop {
             }
         }
         if !found {
-            log::warn!("\rnot found smash bros.");
-            return Err(opencv::Error::new(0, "Not found capture area.".to_string()));
+            return Err(opencv::Error::new(0, "not found capture area.".to_string()));
         }
 
         Ok(Self {
@@ -465,8 +508,6 @@ impl CaptureFromDesktop {
             monitor_lefttop: monitor_lefttop
         })
     }
-
-
 }
 
 /// デフォルト用の空 Mat
@@ -738,7 +779,11 @@ impl CaptureFrameStore {
             return Ok(());
         }
 
-        self.writer.write(capture_image)?;
+        // 動画を一度通すと BGR 同士で処理されなくなるので、色変換を行う。BGR to RGB
+        let mut changed_color_capture_image = core::Mat::default();
+        imgproc::cvt_color(&capture_image, &mut changed_color_capture_image, opencv::imgproc::COLOR_BGRA2RGBA, 0)?;
+
+        self.writer.write(&changed_color_capture_image)?;
         self.recoded_frame += 1;
 
         if self.is_recoding_end() {

@@ -4,7 +4,7 @@ use iced::{
     pane_grid, scrollable,
     Button, Column, Command, Container, Element,
     HorizontalAlignment, Length,
-    PaneGrid, PickList, Scrollable, Text, TextInput,
+    PaneGrid, PickList, Scrollable, Text,
     VerticalAlignment,
 };
 use serde::{
@@ -14,7 +14,10 @@ use serde::{
 use std::time::{Duration, Instant};
 
 
-use crate::capture::CaptureFromVideoDevice;
+use crate::capture::{
+    CaptureFromVideoDevice,
+    CaptureFromWindow,
+};
 use crate::data::{
     SmashbrosData, SmashbrosDataTrait,
     SMASHBROS_RESOURCE
@@ -28,9 +31,8 @@ pub enum Message {
     None,
     CaptureModeChanged(CaptureMode),
     CaptureDeviceChanged(String),
+    CaptureWindowChanged(String),
     DummyMessage,
-    InputWindowCaption(String),
-    InputWindowClass(String),
     SettingsApply,
     Tick(Instant),
     TitleClicked(pane_grid::Pane),
@@ -134,17 +136,12 @@ impl iced_winit::Program for GUI {
                     *dev_name = device_name.clone();
                 }
             },
-            Message::DummyMessage => self.count = 0,
-            Message::InputWindowCaption(window_caption) => {
-                if let CaptureMode::Window(_, win_caption, _) = self.selected_capture_mode.as_mut() {
+            Message::CaptureWindowChanged(window_caption) => {
+                if let CaptureMode::Window(_, win_caption) = self.selected_capture_mode.as_mut() {
                     *win_caption = window_caption.clone();
                 }
             },
-            Message::InputWindowClass(window_class) => {
-                if let CaptureMode::Window(_, _, win_class) = self.selected_capture_mode.as_mut() {
-                    *win_class = window_class.clone();
-                }
-            },
+            Message::DummyMessage => self.count = 0,
             Message::SettingsApply => {
                 // USB の ID は直前で書き換え
                 if let CaptureMode::VideoDevice(_, dev_id, dev_name) = self.selected_capture_mode.as_mut() {
@@ -158,7 +155,7 @@ impl iced_winit::Program for GUI {
                 self.save_config(false).unwrap_or(());
 
                 if let Err(e) = self.engine.change_capture_mode(self.selected_capture_mode.as_ref()) {
-
+                    log::warn!("{}", e.message);
                 }
             },
             Message::Tick(_) => {
@@ -267,11 +264,8 @@ impl GUI {
             log::info!("loaded config.");
         }
 
-        if let CaptureMode::Window(_, win_caption, win_class) = self.selected_capture_mode.as_mut() {
+        if let CaptureMode::Window(_, win_caption) = self.selected_capture_mode.as_mut() {
             *win_caption = self.gui_config.capture_win_caption.clone();
-            *win_class = self.gui_config.capture_win_class.clone();
-        } else if let CaptureMode::Window(_, _, device_name) = self.selected_capture_mode.as_mut() {
-            *device_name = self.gui_config.capture_device_name.clone();
         }
 
         Ok(())
@@ -299,9 +293,8 @@ impl GUI {
             CaptureMode::VideoDevice(_, _, device_name) => {
                 self.gui_config.capture_device_name = device_name.clone();
             },
-            CaptureMode::Window(_, win_caption, win_class) => {
+            CaptureMode::Window(_, win_caption) => {
                 self.gui_config.capture_win_caption = win_caption.clone();
-                self.gui_config.capture_win_class = win_class.clone();
             },
             _ => (),
         }
@@ -445,13 +438,12 @@ struct ContentSettings {
     prev_time: std::time::Instant,
 
     capture_mode_pick_list: iced::pick_list::State<CaptureMode>,
+    window_list_pick_list: iced::pick_list::State<String>,
     device_list_pick_list: iced::pick_list::State<String>,
 
     capture_mode_all: [CaptureMode; 4],
     device_name_list: Box<[String]>,
-
-    window_caption: iced::text_input::State,
-    window_class: iced::text_input::State,
+    window_name_list: Box<[String]>,
 }
 impl ContentSettings {
     fn new() -> Self {
@@ -469,13 +461,13 @@ impl ContentSettings {
             prev_time: std::time::Instant::now(),
 
             capture_mode_pick_list: Default::default(),
+            window_list_pick_list: Default::default(),
             device_list_pick_list: Default::default(),
             
             device_name_list: device_name_list.into_boxed_slice(),
-            capture_mode_all: CaptureMode::ALL.clone(),
+            window_name_list: CaptureFromWindow::get_window_list().into_boxed_slice(),
 
-            window_caption: iced::text_input::State::focused(),
-            window_class: iced::text_input::State::focused(),
+            capture_mode_all: CaptureMode::ALL.clone(),
         }
     }
 
@@ -498,23 +490,15 @@ impl ContentSettings {
         controlls = controlls.push(capture_mode_row);
 
         match capture_mode {
-            CaptureMode::Window(_, win_caption, win_class) => {
+            CaptureMode::Window(_, win_caption) => {
                 let capture_window_row = iced::Row::new()
                     .align_items(iced::Align::Center)
-                    .push(TextInput::new(
-                            &mut self.window_caption,
-                            "caption",
-                            win_caption,
-                            Message::InputWindowCaption
-                        )
-                    )
-                    .push(TextInput::new(
-                            &mut self.window_class,
-                            "class (can blank)",
-                            win_class,
-                            Message::InputWindowClass
-                        )
-                    );
+                    .push(PickList::new(
+                        &mut self.window_list_pick_list,
+                        &*self.window_name_list,
+                        Some(win_caption.clone()),
+                        Message::CaptureWindowChanged
+                    ));
 
                 controlls = controlls.push(capture_window_row);
             },
@@ -703,15 +687,15 @@ pub enum CaptureMode {
     Desktop(&'static str),
     /// _, device_id
     VideoDevice(&'static str, i32, String),
-    /// _, window_caption, window_class
-    Window(&'static str, String, String),
+    /// _, window_caption
+    Window(&'static str, String),
 }
 impl CaptureMode {
     const ALL: [CaptureMode; 4] = [
         Self::Empty { 0:"Not Capture" },
         Self::Desktop { 0:"From Desktop" },
         Self::VideoDevice { 0:"From Video Device", 1:0, 2:String::new() },
-        Self::Window { 0:"From Window", 1:String::new(), 2:String::new() },
+        Self::Window { 0:"From Window", 1:String::new() },
     ];
 }
 impl Default for CaptureMode {
@@ -726,7 +710,7 @@ impl std::fmt::Display for CaptureMode {
             "{}",
             match self {
                 Self::Empty(show_text) | Self::Desktop(show_text)
-                    | Self::VideoDevice(show_text, _, _) | Self::Window(show_text, _, _) => show_text
+                    | Self::VideoDevice(show_text, _, _) | Self::Window(show_text, _) => show_text
             }
         )
     }
