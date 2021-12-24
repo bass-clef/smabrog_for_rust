@@ -26,6 +26,39 @@ use crate::engine::*;
 use crate::scene::SceneList;
 
 
+pub fn make_gui_run() -> Result<(), iced_winit::Error> {
+    use opencv::prelude::MatTrait;
+    // ウィンドウの作成,GUI変数の定義,レンダリングの設定と iced への処理の移譲
+    let window_icon = opencv::imgcodecs::imread("icon/smabrog.png", opencv::imgcodecs::IMREAD_UNCHANGED).unwrap();
+    let icon_size = ( window_icon.cols() * window_icon.rows() * 4 ) as usize;
+    let icon_data_by_slice: &[u8] = unsafe{ std::slice::from_raw_parts(window_icon.datastart(), icon_size) };
+
+    let window = iced_winit::settings::Window {
+        size: (256, 720),
+        min_size: Some((256, 256)), max_size: Some((256, 720)),
+        icon: Some(winit::window::Icon::from_rgba(icon_data_by_slice.to_vec(), window_icon.cols() as u32, window_icon.rows() as u32).unwrap()),
+        ..iced_winit::settings::Window::default()
+    };
+    let settings = iced_winit::Settings::<()> {
+        window: window,
+        flags: (),
+        exit_on_close_request: false
+    };
+    
+    let renderer_settings = iced_wgpu::Settings {
+        antialiasing: Some(iced_wgpu::settings::Antialiasing::MSAAx4),
+        default_text_size: 16,
+        default_font: Some(include_bytes!("../fonts/Mamelon-5-Hi-Regular.otf")),
+        ..iced_wgpu::Settings::default()
+    };
+
+    iced_winit::application::run::<GUI, iced::executor::Default, iced_wgpu::window::Compositor>(
+        settings.into(),
+        renderer_settings,
+    )
+}
+
+
 #[derive(Debug, Clone)]
 pub enum Message {
     None,
@@ -678,48 +711,6 @@ impl ContentBattleTile {
             .style(style::Pane{ pane_type: style::PaneType::Tile })
             .into()
     }
-}
-
-// 検出する方法
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub enum CaptureMode {
-    Empty(&'static str),
-    Desktop(&'static str),
-    /// _, device_id
-    VideoDevice(&'static str, i32, String),
-    /// _, window_caption
-    Window(&'static str, String),
-}
-impl CaptureMode {
-    const ALL: [CaptureMode; 4] = [
-        Self::Empty { 0:"Not Capture" },
-        Self::Desktop { 0:"From Desktop" },
-        Self::VideoDevice { 0:"From Video Device", 1:0, 2:String::new() },
-        Self::Window { 0:"From Window", 1:String::new() },
-    ];
-}
-impl Default for CaptureMode {
-    fn default() -> Self {
-        Self::ALL[0].clone()
-    }
-}
-impl std::fmt::Display for CaptureMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Self::Empty(show_text) | Self::Desktop(show_text)
-                    | Self::VideoDevice(show_text, _, _) | Self::Window(show_text, _) => show_text
-            }
-        )
-    }
-}
-impl AsMut<CaptureMode> for CaptureMode {
-    fn as_mut(&mut self) -> &mut CaptureMode { self }
-}
-impl AsRef<CaptureMode> for CaptureMode {
-    fn as_ref(&self) -> &CaptureMode { self }
 }
 
 

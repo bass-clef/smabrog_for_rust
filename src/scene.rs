@@ -154,7 +154,7 @@ impl SceneJudgment {
                         &mut temp_captured_image, &core::no_array().unwrap())
                     {
                         Ok(_) => (),
-                        Err(e) => {
+                        Err(_e) => {
                             // サイズの違いや色深度の違いでエラーになることがあるけど、マスクがかけられなかった
                             return;
                         },
@@ -188,6 +188,11 @@ impl SceneJudgment {
     /// 前回のテンプレートマッチングで大体一致しているか
     pub fn is_near_match(&self) -> bool {
         self.border_match_ratio <= self.prev_match_ratio
+    }
+
+    /// is_near_match が確定するのに必要な確率
+    pub fn get_border_match_ratio(&self) -> f64 {
+        self.border_match_ratio
     }
 }
 
@@ -402,7 +407,7 @@ impl SceneTrait for ReadyToFightScene {
         Ok( self.grad_scene_judgment.is_near_match() || self.red_scene_judgment.is_near_match() )
     }
 
-    fn to_scene(&self, _now_scene: SceneList) -> SceneList { SceneList::ReadyToFight }
+    fn to_scene(&self, now_scene: SceneList) -> SceneList { SceneList::ReadyToFight }
 
     fn recoding_scene(&mut self, _capture: &core::Mat) -> opencv::Result<()> { Ok(()) }
     fn is_recoded(&self) -> bool { false }
@@ -671,6 +676,8 @@ impl HamVsSpamScene {
                 stock_area = Some(core::Mat::roi( capture_image, core::Rect {x:359, y:335, width:9, height:12}).unwrap() );
             },
             BattleRule::Stamina => {
+                // TODO:
+                hp_area = None;
             },
             _ => ()
         }
@@ -715,7 +722,7 @@ impl HamVsSpamScene {
         Ok(())
     }
 
-    pub fn captured_stamina(capture_image: &mut core::Mat, smashbros_data: &mut SmashbrosData) -> opencv::Result<()> {
+    pub fn captured_stamina(_capture_image: &mut core::Mat, _smashbros_data: &mut SmashbrosData) -> opencv::Result<()> {
 
         Ok(())
     }
@@ -876,7 +883,7 @@ impl GamePlayingScene {
         Ok(false)
     }
     // smash
-    fn game_playing_with_4(&mut self, capture_image: &core::Mat, smashbros_data: &mut SmashbrosData) -> opencv::Result<bool> {
+    fn game_playing_with_4(&mut self, _capture_image: &core::Mat, _smashbros_data: &mut SmashbrosData) -> opencv::Result<bool> {
         Ok(false)
     }
 
@@ -1123,7 +1130,7 @@ impl ResultScene {
         Ok(false)
     }
     // smash
-    fn result_with_4(&mut self, capture_image: &core::Mat, smashbros_data: &mut SmashbrosData) -> opencv::Result<bool> {
+    fn result_with_4(&mut self, _capture_image: &core::Mat, _smashbros_data: &mut SmashbrosData) -> opencv::Result<bool> {
         Ok(false)
     }
 
@@ -1213,12 +1220,14 @@ impl ResultScene {
 
             // 近似白黒処理して
             let mut work_capture_image = core::Mat::default();
-            imgproc::threshold(&power_contour_image, &mut work_capture_image, 127.0, 255.0, imgproc::THRESH_BINARY)?;
+            imgproc::threshold(&power_contour_image, &mut work_capture_image, 200.0, 255.0, imgproc::THRESH_BINARY)?;
 
             // 輪郭捕捉して(数値の範囲)
             let power_contour_image = utils::trimming_any_rect(
                 &mut power_contour_image, &work_capture_image, Some(1), Some(1.0), None, false, None)?;
             utils::cvt_color_to(&power_contour_image, &mut power_area_image, ColorFormat::RGB as i32)?;
+
+            opencv::highgui::imshow(&format!("player_{}", player_count), &power_area_image);
 
             // tesseract で文字(数値)を取得して, 余計な文字を排除
             let text = &async_std::task::block_on(utils::run_ocr_with_number(&power_area_image)).unwrap().to_string();
@@ -1292,13 +1301,19 @@ impl SceneManager {
 
         // 遷移?
         if self.scene_list[index].is_scene(&capture_image, Some(&mut self.smashbros_data)).unwrap_or(false) {
+            let to_scene = self.scene_list[index].to_scene(self.now_scene);
+
+            // ReadyToFightの 直前のシーンが GameEnd なら SmashbrosData を保存する
+            if self.now_scene == SceneList::GameEnd && to_scene == SceneList::ReadyToFight {
+                self.smashbros_data.save_battle();
+            }
+
             log::info!(
                 "[{:?}] match {:?} to {:?}",
                 SceneList::to_scene_list(self.scene_list[index].get_id()),
-                self.now_scene, self.scene_list[index].to_scene(self.now_scene)
+                self.now_scene, to_scene
             );
-            
-            self.now_scene = self.scene_list[index].to_scene(self.now_scene);
+            self.now_scene = to_scene;
         }
 
     }

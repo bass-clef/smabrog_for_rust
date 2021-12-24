@@ -8,6 +8,7 @@ use opencv::{
     prelude::*,
     videoio,
 };
+use serde::Serialize;
 use winapi::shared::minwindef::LPVOID;
 use winapi::shared::windef::*;
 use winapi::um::wingdi::*;
@@ -18,10 +19,88 @@ use crate::scene::{
     ReadyToFightScene,
     SceneTrait
 };
-use crate::utils::utils::{
-    cvt_color_to,
-    to_wchar,
-};
+use crate::utils::utils::to_wchar;
+
+
+// 検出する方法
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub enum CaptureMode {
+    Empty(&'static str),
+    Desktop(&'static str),
+    /// _, device_id
+    VideoDevice(&'static str, i32, String),
+    /// _, window_caption
+    Window(&'static str, String),
+}
+impl CaptureMode {
+    pub const ALL: [CaptureMode; 4] = [
+        Self::Empty { 0:"未設定" },
+        Self::Desktop { 0:"デスクトップ" },
+        Self::VideoDevice { 0:"ビデオデバイス", 1:-1, 2:String::new() },
+        Self::Window { 0:"ウィンドウ", 1:String::new() },
+    ];
+
+    pub fn new_empty() -> Self { Self::Empty { 0:"未設定" } }
+    pub fn new_desktop() -> Self { Self::Desktop { 0:"デスクトップ" } }
+    pub fn new_video_device(device_id: i32) -> Self {
+        Self::VideoDevice { 0:"ビデオデバイス", 1:device_id, 2:String::new() }
+    }
+    pub fn new_window(win_caption: String) -> Self {
+        Self::Window { 0:"ウィンドウ", 1:win_caption }
+    }
+
+    pub fn is_default(&self) -> bool {
+        if Self::new_empty() == *self {
+            return true;
+        }
+        if Self::new_desktop() == *self {
+            return true;
+        }
+        if Self::new_video_device(-1) == *self {
+            return true;
+        }
+        if Self::new_window(String::new()) == *self {
+            return true;
+        }
+        return false;
+    }
+
+    pub fn is_empty(&self) -> bool {
+        if let Self::Empty(_) = self { true } else { false }
+    }
+    pub fn is_desktop(&self) -> bool {
+        if let Self::Desktop(_) = self { true } else { false }
+    }
+    pub fn is_video_device(&self) -> bool {
+        if let Self::VideoDevice(_, _, _) = self { true } else { false }
+    }
+    pub fn is_window(&self) -> bool {
+        if let Self::Window(_, _) = self { true } else { false }
+    }
+}
+impl Default for CaptureMode {
+    fn default() -> Self {
+        Self::ALL[0].clone()
+    }
+}
+impl std::fmt::Display for CaptureMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Empty(show_text) | Self::Desktop(show_text)
+                    | Self::VideoDevice(show_text, _, _) | Self::Window(show_text, _) => show_text
+            }
+        )
+    }
+}
+impl AsMut<CaptureMode> for CaptureMode {
+    fn as_mut(&mut self) -> &mut CaptureMode { self }
+}
+impl AsRef<CaptureMode> for CaptureMode {
+    fn as_ref(&self) -> &CaptureMode { self }
+}
 
 
 /// Mat,DCを保持するクラス。毎回 Mat を作成するのはやはりメモリコストが高すぎた。
@@ -143,10 +222,7 @@ impl CaptureDC {
             let bitmap_handle = GetCurrentObject(dc_handle, OBJ_BITMAP) as HBITMAP;
             if 0 == GetObjectW(bitmap_handle as HANDLE, std::mem::size_of::<BITMAP>() as i32, &mut self.bitmap as PBITMAP as LPVOID) {
                 // ビットマップ情報取得失敗, 権限が足りないとか、GPUとかで直接描画してるとかだと取得できないっぽい
-                log::error!("not get object bitmap. continue by GetClientRect and RGBA.");
-                self.bitmap.bmWidth = self.width;
-                self.bitmap.bmHeight = self.height;
-                self.bitmap.bmBitsPixel = 32;   // RGBA
+                return Err(opencv::Error::new(opencv::core::StsError, "not get object bitmap.".to_string()));
             }
 
             self.width = self.bitmap.bmWidth;
@@ -232,8 +308,6 @@ impl CaptureTrait for CaptureFromVideoDevice {
             self.prev_image = self.empty_data.clone();
         }
 
-        opencv::highgui::imshow("capture", &self.prev_image)?;
-
         Ok(self.prev_image.try_clone()?)
     }
 }
@@ -256,25 +330,21 @@ impl CaptureFromVideoDevice {
         })
     }
 
-
     /// OpenCV で VideoCapture の ID の一覧が取れないので(永遠の謎)、取得して返す
     /// Rust での DirectX系のAPI, COM系が全然わからんかったので、
     /// C++ の MSDN のソースを python でコンパイルした exe を実行して正規表現にかけて返す
     /// @return Option<Vec<(i32, String)>> 無いか、[DeviceName]と[DeviceID]が入った[HashMap]
-    pub fn get_device_list() -> Option<std::collections::HashMap<String, i32>> {
-        use std::collections::HashMap;
-        match std::process::Command::new("video_device_list.exe").output() {
-            Err(_) => None,
-            Ok(output) => {
-                let mut device_list: HashMap<String, i32> = HashMap::new();
-                let re = regex::Regex::new(r"(?P<id>\d+):(?P<name>.+)\r\n").unwrap();
-                for caps in re.captures_iter( std::str::from_utf8(&output.stdout).unwrap_or("") ) {
-                    device_list.insert( String::from(&caps["name"]), caps["id"].parse::<i32>().unwrap_or(-1) );
-                }
+    pub fn get_device_list() -> Vec<String> {
+        let mut device_list: Vec<String> = Vec::new();
 
-                Some(device_list)
+        if let Ok(output) = std::process::Command::new("video_device_list.exe").output() {
+            let re = regex::Regex::new(r"(?P<id>\d+):(?P<name>.+)\r\n").unwrap();
+            for caps in re.captures_iter( std::str::from_utf8(&output.stdout).unwrap_or("") ) {
+                device_list.push( String::from(&caps["name"]) );
             }
         }
+
+        device_list
     }
 }
 
@@ -289,7 +359,7 @@ pub struct CaptureFromWindow {
 impl CaptureTrait for CaptureFromWindow {
     fn get_mat(&mut self) -> opencv::Result<core::Mat> {
         if self.win_handle.is_null() {
-            return Ok(unsafe{core::Mat::new_rows_cols(360, 640, core::CV_8UC4)}.unwrap());
+            return Ok( unsafe{core::Mat::new_rows_cols(360, 640, core::CV_8UC4)}? );
         }
 
         if let Ok(mat) = self.capture_dc.get_mat(self.win_handle, Some(self.content_area), None) {
@@ -297,7 +367,7 @@ impl CaptureTrait for CaptureFromWindow {
 
             if mat.cols() != resize.width || mat.rows() != resize.height {
                 self.prev_image.release()?;
-                imgproc::resize(&mat, &mut self.prev_image, resize, 0.0, 0.0, opencv::imgproc::INTER_LINEAR).unwrap();
+                imgproc::resize(&mat, &mut self.prev_image, resize, 0.0, 0.0, opencv::imgproc::INTER_LINEAR)?;
             } else {
                 self.prev_image.release()?;
                 self.prev_image = mat;
@@ -339,6 +409,8 @@ impl CaptureFromWindow {
         own.capture_dc.height = own.content_area.height;
 
         // 指定された領域で探す
+        let mut is_found = false;
+        let mut max_match_ratio = 0.0;
         let mut ready_to_fight_scene = ReadyToFightScene::new_gray();
         let mut find_capture = |own: &mut Self, content_area: &core::Rect, | -> bool {
             let capture_image = own.get_mat().unwrap();
@@ -355,7 +427,12 @@ impl CaptureFromWindow {
                 &ready_to_fight_scene.red_scene_judgment
             };
 
+            if max_match_ratio < scene_judgment.prev_match_ratio {
+                max_match_ratio = scene_judgment.prev_match_ratio;
+            }
+
             if scene_judgment.is_near_match() {
+                is_found |= true;
                 log::info!("found window:{:3.3}% {:?}", scene_judgment.prev_match_ratio, own.content_area);
                 return true;
             }
@@ -385,6 +462,13 @@ impl CaptureFromWindow {
         own.content_area.height = 360;
         if !find_capture(&mut own, &content_area) {
             own.content_area = content_area;
+        }
+        
+        if !is_found {
+            return Err(opencv::Error::new(0, format!("not capture ReadyToFight. max ratio: {} < {}",
+                max_match_ratio,
+                ready_to_fight_scene.red_scene_judgment.get_border_match_ratio())
+            ));
         }
 
         Ok(own)
@@ -470,7 +554,7 @@ impl CaptureFromDesktop {
         let mut content_area = core::Rect { x: 0, y: 0, width: 0, height: 0 };
         let mut find_resolution: i32 = 40;
         let base_resolution = core::Size { width: 16, height: 9 };
-        let mut resolution_list = vec![40, 44, 50, 53, 60, 64, 70, 80, 90, 96, 100, 110, 120];
+        let resolution_list = vec![40, 44, 50, 53, 60, 64, 70, 80, 90, 96, 100, 110, 120];
         let mut found = false;
         for resolution in resolution_list {
             let gui_status = format!("\rfinding dpi=[{}]", resolution);
