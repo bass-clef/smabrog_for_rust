@@ -1,9 +1,18 @@
 
+use i18n_embed::{
+    fluent::{
+        fluent_language_loader,
+        FluentLanguageLoader
+    },
+    LanguageLoader,
+    unic_langid::LanguageIdentifier,
+};
 use mongodb::*;
 use mongodb::options::{
     ClientOptions,
     FindOptions,
 };
+use rust_embed::RustEmbed;
 use serde::{
     Deserialize,
     Serialize,
@@ -11,7 +20,7 @@ use serde::{
 use std::collections::HashMap;
 use std::io::BufReader;
 
-use crate::resource::bson::*;
+use crate::resource::bson::Document;
 use crate::data::SmashbrosData;
 
 
@@ -22,17 +31,56 @@ use crate::data::SmashbrosData;
 // #[cfg(dependencies = "eframe")]
 pub mod eframe_resource;
 pub use eframe_resource::{
-    GUI_CONFIG,
-    SMASHBROS_RESOURCE,
+    gui_config,
+    smashbros_resource,
 };
 
 
+/// i18n
+#[derive(RustEmbed)]
+#[folder = "locales/"]
+pub struct Localizations;
+/// シングルトンで i18n を保持するため
+pub struct WrappedFluentLanguageLoader {
+    lang: Option<FluentLanguageLoader>,
+}
+impl WrappedFluentLanguageLoader {
+    pub fn get(&mut self) -> &FluentLanguageLoader {
+        if self.lang.is_none() {
+            let loader = fluent_language_loader!();
+
+            loader.load_fallback_language(&Localizations)
+                .expect("Error while loading fallback language");
+        
+            self.lang = Some(loader);
+        }
+        self.lang.as_mut().unwrap()
+    }
+
+    // 言語の変更
+    pub fn change(&mut self, lang: LanguageIdentifier) {
+        let loader = fluent_language_loader!();
+        let _result = i18n_embed::select(&loader, &Localizations, &[lang]);
+
+        self.lang = Some(loader);
+    }
+}
+static mut LANG: WrappedFluentLanguageLoader = WrappedFluentLanguageLoader {
+    lang: None,
+};
+pub fn lang_loader() -> &'static mut WrappedFluentLanguageLoader { unsafe { &mut LANG } }
+pub fn is_lang_english() -> bool { lang_loader().get().current_language().language.as_str() == "en" }
+
+
 /// スマブラ情報が入ったリソースファイル(serde_jsonで読み込むためのコンテナ)
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct SmashbrosResourceText {
     version: String,
     character_list: HashMap<String, String>,
     icon_list: HashMap<String, String>,
+
+    #[serde(default)]
+    i18n_convert_list: HashMap<String, String>,
 }
 impl Default for SmashbrosResourceText {
     fn default() -> Self {
@@ -42,12 +90,27 @@ impl Default for SmashbrosResourceText {
 impl SmashbrosResourceText {
     const FILE_PATH: &'static str = "smashbros_resource.json";
     fn new() -> Self {
-        let file = std::fs::File::open(SmashbrosResourceText::FILE_PATH).unwrap();
+        let lang = lang_loader().get().current_language().language.clone();
+        let path = format!("{}_{}", lang.as_str(), SmashbrosResourceText::FILE_PATH);
+        let mut own = Self::load_resources(&path);
+        log::info!("loaded SmashBros by {} resource version [{}.*.*]", lang.as_str(), own.version);
+
+        // icon_list は全言語のを読み込んでおく
+        for lang in lang_loader().get().available_languages(&Localizations).unwrap() {
+            let path = format!("{}_{}", lang.language.as_str(), SmashbrosResourceText::FILE_PATH);
+
+            own.icon_list.extend(Self::load_resources(&path).icon_list);
+        }
+
+        own
+    }
+
+    fn load_resources(path: &str) -> Self {
+        let file = std::fs::File::open(&path).unwrap();
         let reader = BufReader::new(file);
         
         match serde_json::from_reader::<_, Self>(reader) {
             Ok(config) => {
-                log::info!("loaded SmashBros resource version [{}.*.*]", config.version);
                 config
             },
             Err(_) => {
@@ -173,7 +236,7 @@ impl BattleHistory {
         self.find_data(
             None,
             FindOptions::builder()
-                .sort(doc! { "_id": -1 })
+                .sort(crate::resource::bson::doc! { "_id": -1 })
                 .limit(10)
                 .build()
         )
@@ -182,9 +245,9 @@ impl BattleHistory {
     /// 特定のキャラクターの戦歴を取得
     pub fn find_data_by_chara_list(&self, character_list: Vec<String> ) -> Option<Vec<SmashbrosData>> {
         self.find_data(
-            Some(doc! { "chara_list": character_list }),
+            Some(crate::resource::bson::doc! { "chara_list": character_list }),
             FindOptions::builder()
-                .sort(doc! { "_id": -1 })
+                .sort(crate::resource::bson::doc! { "_id": -1 })
                 .limit(1000)    // 念の為とこれ以上とっても結果が変わらなそう
                 .build()
         )
@@ -211,6 +274,9 @@ impl WrappedBattleHistory {
         self.battle_history.as_mut().unwrap()
     }
 }
-pub static mut BATTLE_HISTORY: WrappedBattleHistory = WrappedBattleHistory {
+static mut BATTLE_HISTORY: WrappedBattleHistory = WrappedBattleHistory {
     battle_history: None,
 };
+pub fn battle_history() -> &'static mut WrappedBattleHistory {
+    unsafe { &mut BATTLE_HISTORY }
+}

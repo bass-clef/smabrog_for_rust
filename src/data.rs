@@ -766,10 +766,24 @@ impl SmashbrosData {
             return;
         }
 
+        // DBに保存するときだけ chara_list を ja に合わせておく(クエリを単純にするため)
+        let back_chara_list = self.chara_list.clone();
+        for i in 0..self.chara_list.len() {
+            if let Some(to_name) = smashbros_resource().get().i18n_convert_list.get(&self.chara_list[i].get()) {
+                // i18n_list にあるものだけ変換する
+                log::info!("saved i18n: {} -> {}", self.chara_list[i].get(), to_name);
+                self.chara_list[i].set(to_name.clone());
+            }
+        }
+
+        // データを保存
         self.db_collection_id = match self.player_count {
-            2 => unsafe{BATTLE_HISTORY.get_mut()}.insert_data(self),
+            2 => battle_history().get_mut().insert_data(self),
             _ => None,
         };
+
+        // chara_list を元に戻す
+        self.chara_list = back_chara_list;
 
         self.saved_time = Some(std::time::Instant::now());
     }
@@ -846,7 +860,7 @@ impl SmashbrosData {
             return;
         }
         
-        if unsafe{SMASHBROS_RESOURCE.get()}.character_list.contains_key(&maybe_character_name) {
+        if smashbros_resource().get().character_list.contains_key(&maybe_character_name) {
             // O(1)
             self.set_character(player_number, maybe_character_name.clone());
         } else {
@@ -854,7 +868,7 @@ impl SmashbrosData {
             let mut max_ratio = 0.0;
             let mut matcher = SequenceMatcher::new("", "");
             let mut chara_name = Self::CHARACTER_NAME_UNKNOWN;
-            for (character_name, _) in unsafe{SMASHBROS_RESOURCE.get()}.character_list.iter() {
+            for (character_name, _) in smashbros_resource().get().character_list.iter() {
                 matcher.set_seqs(character_name, &maybe_character_name);
                 if max_ratio < matcher.ratio() {
                     max_ratio = matcher.ratio();

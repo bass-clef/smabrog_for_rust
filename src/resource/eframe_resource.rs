@@ -17,27 +17,9 @@ pub struct SmashbrosResource {
     pub icon_list: HashMap<String, TextureId>,
     pub order_image_list: HashMap<i32, TextureId>,
     pub image_size_list: HashMap<TextureId, eframe::egui::Vec2>,
+    pub i18n_convert_list: HashMap<String, String>,
 }
 impl SmashbrosResource {
-    fn get_texture_id(path: &str, frame: &mut eframe::epi::Frame<'_>) -> (TextureId, eframe::egui::Vec2) {
-        let image = opencv::imgcodecs::imread(path, opencv::imgcodecs::IMREAD_UNCHANGED).unwrap();
-        let image_size = ( image.cols() * image.rows() * 4 ) as usize;
-        let image_data_by_slice: &[u8] = unsafe{ std::slice::from_raw_parts(image.datastart(), image_size) };
-        let pixels: Vec<_> = image_data_by_slice.to_vec()
-            .chunks_exact(4)
-            .map(|p| eframe::egui::Color32::from_rgba_unmultiplied(p[2], p[1], p[0], p[3]))
-            .collect();
-
-        (
-            frame.tex_allocator()
-                .alloc_srgba_premultiplied(
-                    (image.cols() as usize, image.rows() as usize),
-                    &pixels
-                ),
-            eframe::egui::Vec2::new(image.cols() as f32, image.rows() as f32)
-        )
-    }
-
     pub fn new(frame: &mut eframe::epi::Frame<'_>) -> Self {
         let text = SmashbrosResourceText::new();
         let mut image_size_list = HashMap::new();
@@ -65,7 +47,27 @@ impl SmashbrosResource {
             icon_list,
             order_image_list,
             image_size_list,
+            i18n_convert_list: text.i18n_convert_list,
         }
+    }
+
+    fn get_texture_id(path: &str, frame: &mut eframe::epi::Frame<'_>) -> (TextureId, eframe::egui::Vec2) {
+        let image = opencv::imgcodecs::imread(path, opencv::imgcodecs::IMREAD_UNCHANGED).unwrap();
+        let image_size = ( image.cols() * image.rows() * 4 ) as usize;
+        let image_data_by_slice: &[u8] = unsafe{ std::slice::from_raw_parts(image.datastart(), image_size) };
+        let pixels: Vec<_> = image_data_by_slice.to_vec()
+            .chunks_exact(4)
+            .map(|p| eframe::egui::Color32::from_rgba_unmultiplied(p[2], p[1], p[0], p[3]))
+            .collect();
+
+        (
+            frame.tex_allocator()
+                .alloc_srgba_premultiplied(
+                    (image.cols() as usize, image.rows() as usize),
+                    &pixels
+                ),
+            eframe::egui::Vec2::new(image.cols() as f32, image.rows() as f32)
+        )
     }
 
     pub fn get_image_handle(&self, character_name: String) -> Option<TextureId> {
@@ -87,6 +89,13 @@ impl SmashbrosResource {
     pub fn get_image_size(&self, texture_id: TextureId) -> Option<eframe::egui::Vec2> {
         self.image_size_list.get(&texture_id).cloned()
     }
+
+    // 言語の変更でのリソースの再読み込み
+    pub fn change_language(&mut self) {
+        let text = SmashbrosResourceText::new();
+        self.character_list = text.character_list;
+        self.i18n_convert_list = text.i18n_convert_list;
+    }
 }
 
 /// シングルトンでリソースを保持するため
@@ -101,16 +110,19 @@ impl WrappedSmashbrosResource {
     }
 
     // 参照して返さないと、unwrap() で move 違反がおきてちぬ！
-    pub fn get(&mut self) -> &SmashbrosResource {
+    pub fn get(&mut self) -> &mut SmashbrosResource {
         if self.smashbros_resource.is_none() {
             self.init(None);
         }
-        self.smashbros_resource.as_ref().unwrap()
+        self.smashbros_resource.as_mut().unwrap()
     }
 }
-pub static mut SMASHBROS_RESOURCE: WrappedSmashbrosResource = WrappedSmashbrosResource {
+static mut SMASHBROS_RESOURCE: WrappedSmashbrosResource = WrappedSmashbrosResource {
     smashbros_resource: None,
 };
+pub fn smashbros_resource() -> &'static mut WrappedSmashbrosResource {
+    unsafe { &mut SMASHBROS_RESOURCE }
+}
 
 
 // 設定ファイル
@@ -120,6 +132,12 @@ pub struct GUIConfig {
     pub window_y: i32,
     pub capture_win_caption: String,
     pub capture_device_name: String,
+
+    // バージョン更新でファイルに値が無い場合があるので、以下から default を追加する
+    #[serde(default)]
+    pub visuals: Option<eframe::egui::style::Visuals>,
+    #[serde(default)]
+    pub lang: Option<LanguageIdentifier>,
 }
 impl GUIConfig {
     const DEFAULT_CAPTION: &'static str = "smabrog";
@@ -188,7 +206,10 @@ impl WrappedGUIConfig {
         self.gui_config.as_mut().unwrap()
     }
 }
-pub static mut GUI_CONFIG: WrappedGUIConfig = WrappedGUIConfig {
+static mut GUI_CONFIG: WrappedGUIConfig = WrappedGUIConfig {
     gui_config: None,
 };
+pub fn gui_config() -> &'static mut WrappedGUIConfig {
+    unsafe { &mut GUI_CONFIG }
+}
 

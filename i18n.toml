@@ -1,0 +1,4 @@
+fallback_language = "ja-JP"
+
+[fluent]
+assets_dir = "locales"

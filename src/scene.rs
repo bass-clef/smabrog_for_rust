@@ -44,6 +44,26 @@ impl Default for SceneJudgment {
     }
 }
 impl SceneJudgment {
+    // 言語によって読み込むファイルを変えて作成する
+    fn news_with_lang<T>(new_func: T, name: &str) -> Self
+    where T: Fn(core::Mat, Option<core::Mat>) -> opencv::Result<Self>
+    {
+        use crate::resource::lang_loader;
+        use i18n_embed::LanguageLoader;
+
+        let lang = lang_loader().get().current_language().language.clone();
+        let path = format!("resource/{}_{}", lang.as_str(), name);
+
+        new_func(
+            imgcodecs::imread(&format!("{}_color.png", path), imgcodecs::IMREAD_UNCHANGED).unwrap(),
+            Some(imgcodecs::imread(&format!("{}_mask.png", path), imgcodecs::IMREAD_UNCHANGED).unwrap())
+        ).unwrap()
+    }
+
+    fn new_gray_with_lang(name: &str) -> Self { Self::news_with_lang(Self::new_gray, name) }
+    fn new_with_lang(name: &str) -> Self { Self::news_with_lang(Self::new, name) }
+    // fn new_trans_with_lang(name: &str) -> Self { Self::news_with_lang(Self::new_trans, name) }
+
     /// color_format に {hoge}_image を強制して、一致させるシーン
     fn new_color_format(color_image: core::Mat, mask_image: Option<core::Mat>, color_format: ColorFormat) -> opencv::Result<Self> {
         let mut converted_color_image = core::Mat::default();
@@ -198,8 +218,12 @@ impl SceneJudgment {
 
 /// シーン雛形 (動作は子による)
 pub trait SceneTrait {
+    /// 言語の変更
+    fn change_language(&mut self) {}
     /// シーン識別ID
     fn get_id(&self) -> i32;
+    /// 前回の検出情報
+    fn get_prev_match(&self) -> Option<&SceneJudgment>;
     /// シーンを検出するか
     fn continue_match(&self, now_scene: SceneList) -> bool;
     /// "この"シーンかどうか
@@ -212,8 +236,6 @@ pub trait SceneTrait {
     fn is_recoded(&self) -> bool;
     /// シーン毎に録画したものから必要なデータを検出する
     fn detect_data(&mut self, smashbros_data: &mut SmashbrosData) -> opencv::Result<()>;
-
-    fn draw(&self, capture: &mut core::Mat);
 }
 
 use strum::IntoEnumIterator;
@@ -246,6 +268,7 @@ impl Default for SceneList {
 struct UnknownScene {}
 impl SceneTrait for UnknownScene {
     fn get_id(&self) -> i32 { SceneList::Unknown as i32 }
+    fn get_prev_match(&self) -> Option<&SceneJudgment> { None }
 
     // 状態不明は他から遷移する、もしくは最初のシーンなので, 自身ではならない, 他に移らない, 録画しない,, データ検出しない
     fn continue_match(&self, _now_scene: SceneList) -> bool { false }
@@ -254,8 +277,6 @@ impl SceneTrait for UnknownScene {
     fn recoding_scene(&mut self, _capture: &core::Mat) -> opencv::Result<()> { Ok(()) }
     fn is_recoded(&self) -> bool { false }
     fn detect_data(&mut self, _smashbros_data: &mut SmashbrosData) -> opencv::Result<()> { Ok(()) }
-
-    fn draw(&self, _capture: &mut core::Mat) {}
 }
 
 /// 読込中のシーン
@@ -278,6 +299,7 @@ impl Default for LoadingScene {
 }
 impl SceneTrait for LoadingScene {
     fn get_id(&self) -> i32 { SceneList::Loading as i32 }
+    fn get_prev_match(&self) -> Option<&SceneJudgment> { Some(&self.scene_judgment) }
 
     // 読込中の画面はどのシーンでも検出しうる
     fn continue_match(&self, _now_scene: SceneList) -> bool { true }
@@ -297,8 +319,6 @@ impl SceneTrait for LoadingScene {
     fn is_recoded(&self) -> bool { false }
 
     fn detect_data(&mut self, _smashbros_data: &mut SmashbrosData) -> opencv::Result<()> { Ok(()) }
-
-    fn draw(&self, _capture: &mut core::Mat) {}
 }
 
 /// ダイアログが表示されているシーン
@@ -319,6 +339,7 @@ impl Default for DialogScene {
 }
 impl SceneTrait for DialogScene {
     fn get_id(&self) -> i32 { SceneList::Dialog as i32 }
+    fn get_prev_match(&self) -> Option<&SceneJudgment> { Some(&self.scene_judgment) }
     
     // 回線切断などでどのシーンでも検出しうるけど、それらは ReadyToFight を通るので、Result 後のみでいい
     fn continue_match(&self, now_scene: SceneList) -> bool {
@@ -343,8 +364,6 @@ impl SceneTrait for DialogScene {
     fn is_recoded(&self) -> bool { false }
 
     fn detect_data(&mut self, _smashbros_data: &mut SmashbrosData) -> opencv::Result<()> { Ok(()) }
-
-    fn draw(&self, _capture: &mut core::Mat) {}
 }
 
 /// Ready to Fight が表示されているシーン]
@@ -359,6 +378,14 @@ impl Default for ReadyToFightScene {
 }
 impl SceneTrait for ReadyToFightScene {
     fn get_id(&self) -> i32 { SceneList::ReadyToFight as i32 }
+    fn get_prev_match(&self) -> Option<&SceneJudgment> {
+        // 高い方を返す
+        if self.red_scene_judgment.prev_match_ratio < self.grad_scene_judgment.prev_match_ratio {
+            return Some(&self.grad_scene_judgment);
+        }
+
+        Some(&self.red_scene_judgment)
+    }
 
     // 回線切断などの原因で最初に戻ることは常にあるので gray match だし常に判定だけしておく
     fn continue_match(&self, now_scene: SceneList) -> bool {
@@ -407,12 +434,11 @@ impl SceneTrait for ReadyToFightScene {
         Ok( self.grad_scene_judgment.is_near_match() || self.red_scene_judgment.is_near_match() )
     }
 
-    fn to_scene(&self, now_scene: SceneList) -> SceneList { SceneList::ReadyToFight }
+    fn to_scene(&self, _now_scene: SceneList) -> SceneList { SceneList::ReadyToFight }
 
     fn recoding_scene(&mut self, _capture: &core::Mat) -> opencv::Result<()> { Ok(()) }
     fn is_recoded(&self) -> bool { false }
     fn detect_data(&mut self, _smashbros_data: &mut SmashbrosData) -> opencv::Result<()> { Ok(()) }
-    fn draw(&self, _capture: &mut core::Mat) {}
 }
 impl ReadyToFightScene {
     pub fn new_gray() -> Self {
@@ -459,18 +485,12 @@ struct MatchingScene {
 impl Default for MatchingScene {
     fn default() -> Self {
         Self {
-            scene_judgment: SceneJudgment::new(
-                    imgcodecs::imread("resource/ready_ok_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
-                    Some(imgcodecs::imread("resource/ready_ok_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
-                ).unwrap()
+            scene_judgment: SceneJudgment::new_with_lang("ready_ok")
                 .set_border(0.95)
                 .set_size(core::Rect{    // 参照される回数が多いので matchTemplate する大きさ減らす
                     x:0, y:270, width:320, height: 90
                 }),
-            scene_judgment_with4: SceneJudgment::new(
-                    imgcodecs::imread("resource/with_4_battle_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
-                    Some(imgcodecs::imread("resource/with_4_battle_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
-                ).unwrap()
+            scene_judgment_with4: SceneJudgment::new_with_lang("with_4_battle")
                 .set_size(core::Rect{
                     x:0, y:270, width:640, height: 90
                 }),
@@ -478,7 +498,9 @@ impl Default for MatchingScene {
     }
 }
 impl SceneTrait for MatchingScene {
+    fn change_language(&mut self) { *self = Self::default(); }
     fn get_id(&self) -> i32 { SceneList::Matching as i32 }
+    fn get_prev_match(&self) -> Option<&SceneJudgment> { Some(&self.scene_judgment) }
     
     fn continue_match(&self, now_scene: SceneList) -> bool {
         match now_scene {
@@ -516,8 +538,6 @@ impl SceneTrait for MatchingScene {
     fn recoding_scene(&mut self, _capture: &core::Mat) -> opencv::Result<()> { Ok(()) }
     fn is_recoded(&self) -> bool { false }
     fn detect_data(&mut self, _smashbros_data: &mut SmashbrosData) -> opencv::Result<()> { Ok(()) }
-
-    fn draw(&self, _capture: &mut core::Mat) {}
 }
 
 /// キャラクターが大きく表示されてる画面
@@ -530,21 +550,20 @@ struct HamVsSpamScene {
 impl Default for HamVsSpamScene {
     fn default() -> Self {
         Self {
-            vs_scene_judgment: SceneJudgment::new(
-                imgcodecs::imread("resource/vs_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
-                Some(imgcodecs::imread("resource/vs_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
-            ).unwrap(),
+            vs_scene_judgment: SceneJudgment::new_with_lang("vs"),
             rule_time_scene_judgment: SceneJudgment::new(
-                imgcodecs::imread("resource/rule_time_stock_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
-                Some(imgcodecs::imread("resource/rule_time_stock_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
-            ).unwrap()
-            .set_border(0.95),
+                    imgcodecs::imread("resource/rule_time_stock_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
+                    Some(imgcodecs::imread("resource/rule_time_stock_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
+                ).unwrap()
+                .set_border(0.95),
             buffer: CaptureFrameStore::default(),
         }
     }
 }
 impl SceneTrait for HamVsSpamScene {
+    fn change_language(&mut self) { *self = Self::default(); }
     fn get_id(&self) -> i32 { SceneList::HamVsSpam as i32 }
+    fn get_prev_match(&self) -> Option<&SceneJudgment> { Some(&self.vs_scene_judgment) }
     
     fn continue_match(&self, now_scene: SceneList) -> bool {
         match now_scene {
@@ -591,8 +610,6 @@ impl SceneTrait for HamVsSpamScene {
 
         Ok(())
     }
-
-    fn draw(&self, _capture: &mut core::Mat) {}
 }
 impl HamVsSpamScene {
     pub fn captured_character_name(capture_image: &core::Mat, smashbros_data: &mut SmashbrosData) -> opencv::Result<bool> {
@@ -769,6 +786,7 @@ impl Default for GameStartScene {
 }
 impl SceneTrait for GameStartScene {
     fn get_id(&self) -> i32 { SceneList::GameStart as i32 }
+    fn get_prev_match(&self) -> Option<&SceneJudgment> { Some(&self.scene_judgment) }
     
     fn continue_match(&self, now_scene: SceneList) -> bool {
         match now_scene {
@@ -804,8 +822,6 @@ impl SceneTrait for GameStartScene {
     fn recoding_scene(&mut self, _capture: &core::Mat) -> opencv::Result<()> { Ok(()) }
     fn is_recoded(&self) -> bool { false }
     fn detect_data(&mut self, _smashbros_data: &mut SmashbrosData) -> opencv::Result<()> { Ok(()) }
-    
-    fn draw(&self, _capture: &mut core::Mat) {}
 }
 
 /// 試合中の検出
@@ -840,6 +856,14 @@ impl Default for GamePlayingScene {
 }
 impl SceneTrait for GamePlayingScene {
     fn get_id(&self) -> i32 { SceneList::GamePlaying as i32 }
+    fn get_prev_match(&self) -> Option<&SceneJudgment> {
+        // 高い方を返す
+        if self.stock_black_scene_judgment.prev_match_ratio < self.stock_white_scene_judgment.prev_match_ratio {
+            return Some(&self.stock_white_scene_judgment);
+        }
+
+        Some(&self.stock_black_scene_judgment)
+    }
     
     fn continue_match(&self, now_scene: SceneList) -> bool {
         match now_scene {
@@ -873,8 +897,6 @@ impl SceneTrait for GamePlayingScene {
         })?;
         Ok(())
     }
-
-    fn draw(&self, _capture: &mut core::Mat) {}
 }
 impl GamePlayingScene {
     // 1 on 1
@@ -967,21 +989,24 @@ struct GameEndScene {
 impl Default for GameEndScene {
     fn default() -> Self {
         Self {
-            game_set_scene_judgment: SceneJudgment::new_gray(
-                imgcodecs::imread("resource/game_set_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
-                Some(imgcodecs::imread("resource/game_set_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
-            ).unwrap()
-            .set_border(0.95),
-            time_up_scene_judgment: SceneJudgment::new_gray(
-                imgcodecs::imread("resource/time_up_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
-                Some(imgcodecs::imread("resource/time_up_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
-            ).unwrap()
-            .set_border(0.95),
+            game_set_scene_judgment: SceneJudgment::new_gray_with_lang("game_set")
+                .set_border(0.95),
+            time_up_scene_judgment: SceneJudgment::new_gray_with_lang("time_up")
+                .set_border(0.95),
         }
     }
 }
 impl SceneTrait for GameEndScene {
+    fn change_language(&mut self) { *self = Self::default(); }
     fn get_id(&self) -> i32 { SceneList::GameEnd as i32 }
+    fn get_prev_match(&self) -> Option<&SceneJudgment> {
+        // 高い方を返す
+        if self.game_set_scene_judgment.prev_match_ratio < self.time_up_scene_judgment.prev_match_ratio {
+            return Some(&self.time_up_scene_judgment);
+        }
+
+        Some(&self.game_set_scene_judgment)
+    }
     
     fn continue_match(&self, now_scene: SceneList) -> bool {
         match now_scene {
@@ -1015,8 +1040,6 @@ impl SceneTrait for GameEndScene {
     fn recoding_scene(&mut self, _capture: &core::Mat) -> opencv::Result<()> { Ok(()) }
     fn is_recoded(&self) -> bool { false }
     fn detect_data(&mut self, _smashbros_data: &mut SmashbrosData) -> opencv::Result<()> { Ok(()) }
-
-    fn draw(&self, _capture: &mut core::Mat) {}
 }
 
 /// 結果画面表示
@@ -1060,6 +1083,7 @@ impl Default for ResultScene {
 }
 impl SceneTrait for ResultScene {
     fn get_id(&self) -> i32 { SceneList::Unknown as i32 }
+    fn get_prev_match(&self) -> Option<&SceneJudgment> { Some(&self.count_down_scene_judgment) }
 
     fn continue_match(&self, now_scene: SceneList) -> bool {
         match now_scene {
@@ -1115,8 +1139,6 @@ impl SceneTrait for ResultScene {
         })?;
         Ok(())
     }
-
-    fn draw(&self, _capture: &mut core::Mat) {}
 }
 impl ResultScene {
     const ORDER_AREA_POS: [[core::Point; 4]; 2] = [
@@ -1227,8 +1249,6 @@ impl ResultScene {
                 &mut power_contour_image, &work_capture_image, Some(1), Some(1.0), None, false, None)?;
             utils::cvt_color_to(&power_contour_image, &mut power_area_image, ColorFormat::RGB as i32)?;
 
-            opencv::highgui::imshow(&format!("player_{}", player_count), &power_area_image);
-
             // tesseract で文字(数値)を取得して, 余計な文字を排除
             let text = &async_std::task::block_on(utils::run_ocr_with_number(&power_area_image)).unwrap().to_string();
             let number = re.split(text).collect::<Vec<&str>>().join(""); // 5桁まで (\d,\d,\d,\d,\d)
@@ -1271,6 +1291,7 @@ impl Default for SceneManager {
     }
 }
 impl SceneManager {
+    // 現在の検出されたデータを返す
     pub fn get_now_data(&self) -> SmashbrosData {
         let mut cloned_data = self.smashbros_data.clone();
         // 重複操作されないために適当な時間で保存済みのデータにする
@@ -1279,13 +1300,26 @@ impl SceneManager {
         cloned_data
     }
 
+    // 現在のシーンを返す
     pub fn get_now_scene(&self) -> SceneList {
         self.now_scene.clone()
     }
 
-    pub async fn update_scene<'a>(&mut self, capture_image: &'a mut core::Mat, index: usize, is_loading: bool) {
-        self.scene_list[index].draw(capture_image);
+    // 現在検出しようとしているシーンの、前回の検出率を返す
+    pub fn get_prev_match_ratio(&self) -> f64 {
+        for index in 0..self.scene_list.len() {
+            if self.scene_list[index].continue_match(self.now_scene) {
+                if let Some(scene_judgment) = self.scene_list[index].get_prev_match() {
+                    return scene_judgment.prev_match_ratio;
+                }
+            }
+        }
 
+        0.0
+    }
+
+    // シーンを更新する
+    pub async fn update_scene<'a>(&mut self, capture_image: &'a mut core::Mat, index: usize, is_loading: bool) {
         // シーンによって適切な時に録画される
         self.scene_list[index].recoding_scene(&capture_image).unwrap_or(());
         if self.scene_list[index].is_recoded() {
@@ -1318,6 +1352,7 @@ impl SceneManager {
 
     }
 
+    // 全てのシーンを更新する
     pub fn update_scene_list(&mut self) -> opencv::Result<()> {
         let mut capture_image = self.capture.get_mat()?;
         let is_loading = self.scene_loading.is_scene(&capture_image, None)?;
@@ -1330,5 +1365,12 @@ impl SceneManager {
         }
 
         Ok(())
+    }
+
+    // 言語の変更をする
+    pub fn change_language(&mut self) {
+        for scene in self.scene_list.iter_mut() {
+            scene.change_language();
+        }
     }
 }

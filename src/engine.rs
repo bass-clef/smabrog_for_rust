@@ -1,7 +1,7 @@
 
 use crate::capture::*;
 use crate::data::*;
-use crate::resource::BATTLE_HISTORY;
+use crate::resource::battle_history;
 use crate::scene::*;
 
 
@@ -22,7 +22,7 @@ impl SmashBrogEngine {
             scene_manager: SceneManager::default(),
             prev_saved_time: std::time::Instant::now(),
             prev_find_chara_list: Vec::new(),
-            data_latest_10: unsafe{BATTLE_HISTORY.get()}.find_data_limit_10().unwrap_or(Vec::new()),
+            data_latest_10: battle_history().get().find_data_limit_10().unwrap_or(Vec::new()),
             data_latest_by_chara: Vec::new(),
         }
     }
@@ -37,10 +37,10 @@ impl SmashBrogEngine {
             return false;
         }
 
-        if let Some(data_latest_10) = unsafe{BATTLE_HISTORY.get()}.find_data_limit_10() {
+        if let Some(data_latest_10) = battle_history().get().find_data_limit_10() {
             self.data_latest_10 = data_latest_10;
         }
-        if let Some(data_latest_by_chara) = unsafe{BATTLE_HISTORY.get()}.find_data_by_chara_list(self.prev_find_chara_list.clone()) {
+        if let Some(data_latest_by_chara) = battle_history().get().find_data_by_chara_list(self.prev_find_chara_list.clone()) {
             self.data_latest_by_chara = data_latest_by_chara;
         }
 
@@ -80,6 +80,11 @@ impl SmashBrogEngine {
         Ok(())
     }
 
+    /// 言語の変更
+    pub fn change_language(&mut self) {
+        self.scene_manager.change_language();
+    }
+
     /// 直近 10 件のデータを返す (10未満も返る)
     /// @result Vec<SmashbrosData> 取得していたデータ郡の clone
     pub fn get_data_latest_10(&mut self) -> Vec<SmashbrosData> {
@@ -97,7 +102,7 @@ impl SmashBrogEngine {
         self.update_now_data();
         if prev_find_chara_list != self.prev_find_chara_list {
             self.prev_find_chara_list = prev_find_chara_list;
-            if let Some(data_latest_by_chara) = unsafe{BATTLE_HISTORY.get()}.find_data_by_chara_list(self.prev_find_chara_list.clone()) {
+            if let Some(data_latest_by_chara) = battle_history().get().find_data_by_chara_list(self.prev_find_chara_list.clone()) {
                 self.data_latest_by_chara = data_latest_by_chara;
             }
         }
@@ -149,6 +154,10 @@ impl SmashBrogEngine {
     /// 現在検出中のシーン名を返す
     pub fn get_captured_scene(&self) -> SceneList {
         self.scene_manager.get_now_scene()
+    }
+
+    pub fn get_prev_match_ratio(&self) -> f64 {
+        self.scene_manager.get_prev_match_ratio()
     }
 
     /// どっかのメインループで update する用

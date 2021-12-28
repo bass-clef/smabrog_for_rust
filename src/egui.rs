@@ -4,8 +4,10 @@ use eframe::{
     egui::{
         self,
         plot,
+        style::Visuals,
     },
 };
+use i18n_embed_fl::fl;
 use opencv::prelude::MatTrait;
 
 use crate::capture::CaptureMode;
@@ -15,8 +17,9 @@ use crate::data::{
 };
 use crate::engine::SmashBrogEngine;
 use crate::resource::{
-    GUI_CONFIG,
-    SMASHBROS_RESOURCE,
+    gui_config,
+    smashbros_resource,
+    lang_loader,
 };
 use crate::scene::SceneList;
 
@@ -25,29 +28,33 @@ pub fn make_gui_run() -> anyhow::Result<()> {
     let mut native_options = eframe::NativeOptions::default();
     native_options.icon_data = Some(GUI::get_icon_data());
     native_options.initial_window_size = Some(GUI::get_initial_window_size());
+    native_options.resizable = false;
 
     let app = GUI::new();
-    eframe::run_native(Box::new(app), native_options);
 
-    Ok(())
+    eframe::run_native(Box::new(app), native_options)
 }
 
 
 // GUIの種類, is_source に指定するのに必要
 #[derive(std::hash::Hash)]
 enum GUIIdList {
+    AppearanceTab,
     SourceKind,
+    LanguageKind,
+
     WindowList,
     DeviceList,
+
     BattleInformationGrid,
     PowerPlot,
 }
 
 // GUI の子ウィンドウが持つ
 trait GUIModelTrait {
-    fn name(&self) -> &'static str;
+    fn name(&self) -> String;
     fn show(&mut self, ctx: &egui::CtxRef);
-    fn setup(&mut self, ctx: &egui::CtxRef);
+    fn setup(&mut self, _ctx: &egui::CtxRef) {}
 }
 trait  GUIViewTrait {
     fn ui(&mut self, ui: &mut egui::Ui);
@@ -72,6 +79,7 @@ impl GUI {
         }
     }
 
+    // GUI の icon を返す
     pub fn get_icon_data() -> epi::IconData {
         let window_icon = opencv::imgcodecs::imread("icon/smabrog.png", opencv::imgcodecs::IMREAD_UNCHANGED).unwrap();
         let icon_size = ( window_icon.cols() * window_icon.rows() * 4 ) as usize;
@@ -84,18 +92,22 @@ impl GUI {
         }
     }
 
+    // data の player_id のキャラ画像を指定 size で返す
     pub fn get_chara_image<D: SmashbrosDataTrait + ?Sized>(data: &D, player_id: i32, size: [f32; 2]) -> Option<egui::Image> {
-        if let Some(chara_texture) = unsafe{ SMASHBROS_RESOURCE.get() }.get_image_handle(data.get_character(player_id)) {
+        if let Some(chara_texture) = smashbros_resource().get().get_image_handle(data.get_character(player_id)) {
             return Some(egui::Image::new(chara_texture, egui::Vec2::new(size[0], size[1])));
         }
 
         None
     }
 
+    // 初期化ウィンドウサイズを返す
     pub fn get_initial_window_size() -> egui::Vec2 { egui::Vec2::new(256f32, 720f32) }
 
+    // タイトルバーの高さを返す
     pub fn get_title_bar_height() -> f32 { 32.0 }
 
+    // フォントの設定
     pub fn set_fonts(&self, ctx: &egui::CtxRef) {
         let mut fonts = egui::FontDefinitions::default();
         fonts.font_data.insert(
@@ -137,36 +149,55 @@ impl GUI {
 
         // 検出状態
         self.window_configuration.now_scene = self.engine.get_captured_scene();
+        self.window_configuration.prev_match_ratio = self.engine.get_prev_match_ratio();
     }
 
-    // 検出モードの変更
-    fn set_capture_mode(&mut self) {
-        if self.window_configuration.get_captured_mode() != &self.capture_mode {
-            self.capture_mode = self.window_configuration.get_captured_mode().clone();
-            if self.capture_mode.is_default() {
-                // 未選択状態での設定はコンフィグから取得しておく
-                match self.capture_mode.as_mut() {
-                    CaptureMode::Window(_, caption_name) => {
-                        *caption_name = unsafe{ GUI_CONFIG.get() }.capture_win_caption.clone();
-                    },
-                    CaptureMode::VideoDevice(_, device_id, _) => {
-                        *device_id = self.window_configuration.get_device_id(
-                            unsafe{ GUI_CONFIG.get() }.capture_device_name.clone()
-                        ).unwrap_or(-1);
-                    },
-                    _ => (),
-                }
-            }
+    // 検出モードの更新
+    fn update_capture_mode(&mut self) {
+        if self.window_configuration.get_captured_mode() == &self.capture_mode {
+            return;
+        }
 
-            self.window_configuration.set_capture_mode(self.capture_mode.clone());
-
-            match self.engine.change_capture_mode(&self.capture_mode) {
-                Ok(_) => {
-                    unsafe { GUI_CONFIG.get().save_config(false); }
+        self.capture_mode = self.window_configuration.get_captured_mode().clone();
+        if self.capture_mode.is_default() {
+            // 未選択状態での設定はコンフィグから取得しておく
+            match self.capture_mode.as_mut() {
+                CaptureMode::Window(_, caption_name) => {
+                    *caption_name = gui_config().get().capture_win_caption.clone();
                 },
-                Err(e) => log::warn!("{}", e),
+                CaptureMode::VideoDevice(_, device_id, _) => {
+                    *device_id = self.window_configuration.get_device_id(
+                        gui_config().get().capture_device_name.clone()
+                    ).unwrap_or(-1);
+                },
+                _ => (),
             }
         }
+
+        self.window_configuration.set_capture_mode(self.capture_mode.clone());
+
+        match self.engine.change_capture_mode(&self.capture_mode) {
+            Ok(_) => {
+                let _ = gui_config().get().save_config(false);
+            },
+            Err(e) => log::warn!("{}", e),
+        }
+    }
+
+    // 言語の更新
+    fn update_language(&mut self, is_initialize: bool) {
+        use i18n_embed::LanguageLoader;
+
+        let now_lang = lang_loader().get().current_language();
+        if let Some(lang) = gui_config().get().lang.as_ref() {
+            if !is_initialize && now_lang.language == lang.language {
+                return;
+            }
+        }
+
+        gui_config().get().lang = Some(now_lang.clone());
+        smashbros_resource().get().change_language();
+        self.engine.change_language();
     }
 
     // 幅が 0 の egui::Grid を返す
@@ -182,11 +213,16 @@ impl epi::App for GUI {
     fn name(&self) -> &str { "smabrog" }
 
     fn setup(&mut self, ctx: &egui::CtxRef, frame: &mut epi::Frame<'_>, _storage: Option<&dyn epi::Storage>) {
-        self.set_fonts(ctx);
-        unsafe {
-            SMASHBROS_RESOURCE.init(Some(frame));
-            GUI_CONFIG.get().load_config(true);
+        smashbros_resource().init(Some(frame));
+        gui_config().get().load_config(true).expect("Failed to load config");
+        if let Some(lang) = gui_config().get().lang.as_ref() {
+            lang_loader().change(lang.clone());
         }
+        self.update_language(true);
+        if let Some(visuals) = gui_config().get().visuals.as_ref() {
+            ctx.set_visuals(visuals.clone());
+        }
+        self.set_fonts(ctx);
 
         self.window_battle_information.setup(ctx);
         self.window_battle_history.setup(ctx);
@@ -197,9 +233,7 @@ impl epi::App for GUI {
     }
 
     fn on_exit(&mut self) {
-        unsafe {
-            GUI_CONFIG.get().save_config(true);
-        }
+        let _ = gui_config().get().save_config(true);
     }
 
     fn update(&mut self, ctx: &egui::CtxRef, frame: &mut epi::Frame<'_>) {
@@ -232,7 +266,8 @@ impl epi::App for GUI {
             return;
         }
         self.update_battle_informations();
-        self.set_capture_mode();
+        self.update_capture_mode();
+        self.update_language(false);
 
         // 表示
         self.window_battle_information.show(ctx);
@@ -265,13 +300,11 @@ impl WindowBattleInformation {
     }
 }
 impl GUIModelTrait for WindowBattleInformation {
-    fn name(&self) -> &'static str { "対戦情報" }
+    fn name(&self) -> String { fl!(lang_loader().get(), "battle_information") }
     fn show(&mut self, ctx: &egui::CtxRef) {
         egui::Window::new(self.name())
             .default_rect(Self::get_initial_window_rect())
             .show(ctx, |ui| self.ui(ui));
-    }
-    fn setup(&mut self, ctx: &egui::CtxRef) {
     }
 }
 impl GUIViewTrait for WindowBattleInformation {
@@ -304,14 +337,12 @@ impl WindowBattleHistory {
     }
 }
 impl GUIModelTrait for WindowBattleHistory {
-    fn name(&self) -> &'static str { "戦歴" }
+    fn name(&self) -> String { fl!(lang_loader().get(), "battle_history") }
     fn show(&mut self, ctx: &egui::CtxRef) {
         egui::Window::new(self.name())
             .default_rect(Self::get_initial_window_rect())
             .vscroll(true)
             .show(ctx, |ui| self.ui(ui));
-    }
-    fn setup(&mut self, ctx: &egui::CtxRef) {
     }
 }
 impl GUIViewTrait for WindowBattleHistory {
@@ -325,23 +356,39 @@ impl GUIViewTrait for WindowBattleHistory {
     }
 }
 
+// 設定タブ
+#[derive(PartialEq)]
+enum ConfigTab {
+    Source,
+    Appearance,
+}
+impl Default for ConfigTab {
+    fn default() -> Self {
+        ConfigTab::Source
+    }
+}
+
 // 設定
 #[derive(Default)]
 struct WindowConfiguration {
-    pub now_scene: SceneList,
+    config_tab: ConfigTab,
     capture_mode: CaptureMode,
     window_caption: String,
     video_device_id: i32,
     video_device_list: Vec<String>,
     window_caption_list: Vec<String>,
+    pub now_scene: SceneList,
+    pub prev_match_ratio: f64,
 }
 impl WindowConfiguration {
+    // 初期のウィンドウサイズを返す
     pub fn get_initial_window_size() -> egui::Vec2 {
         let parent_size = GUI::get_initial_window_size();
 
         egui::Vec2::new(parent_size.x, parent_size.y / 10.0 * 2.0 - GUI::get_title_bar_height())
     }
 
+    // 初期のウィンドウサイズ(Rect)を返す
     pub fn get_initial_window_rect() -> egui::Rect {
         egui::Rect::from_min_size(
             egui::Pos2::new(0.0, GUI::get_initial_window_size().y - Self::get_initial_window_size().y),
@@ -349,14 +396,17 @@ impl WindowConfiguration {
         )
     }
 
+    // キャプチャモードを設定する
     pub fn set_capture_mode(&mut self, mode: CaptureMode) {
         self.capture_mode = mode;
     }
 
+    // キャプチャモードを取得する
     pub fn get_captured_mode(&self) -> &CaptureMode {
         &self.capture_mode
     }
 
+    // デバイス名からデバイスIDを取得する
     pub fn get_device_id(&self, device_name: String) -> Option<i32> {
         if let Some(id) = self.video_device_list.iter().position(|name| name == &device_name) {
             Some(id as i32)
@@ -365,6 +415,7 @@ impl WindowConfiguration {
         }
     }
 
+    // キャプチャモードの設定の view を返す
     fn source_settings_view(&mut self, ui: &mut egui::Ui) {
         use crate::capture::{
             CaptureFromWindow,
@@ -375,18 +426,18 @@ impl WindowConfiguration {
             .width(ui.available_size().x - 10.0)
             .selected_text(format!("{}", self.capture_mode))
             .show_ui(ui, |ui| {
-                if ui.add(egui::SelectableLabel::new(self.capture_mode.is_empty(), "未設定")).clicked() {
+                if ui.add(egui::SelectableLabel::new( self.capture_mode.is_empty(), fl!(lang_loader().get(), "empty") )).clicked() {
                     self.capture_mode = CaptureMode::new_empty();
                 }
-                if ui.add(egui::SelectableLabel::new(self.capture_mode.is_window(), "ウィンドウ".to_string())).clicked() {
+                if ui.add(egui::SelectableLabel::new( self.capture_mode.is_window(), fl!(lang_loader().get(), "window") )).clicked() {
                     self.capture_mode = CaptureMode::new_window(self.window_caption.clone());
                     self.window_caption_list = CaptureFromWindow::get_window_list();
                 }
-                if ui.add(egui::SelectableLabel::new(self.capture_mode.is_video_device(), "ビデオデバイス".to_string())).clicked() {
+                if ui.add(egui::SelectableLabel::new( self.capture_mode.is_video_device(), fl!(lang_loader().get(), "video_device") )).clicked() {
                     self.capture_mode = CaptureMode::new_video_device(self.video_device_id);
                     self.video_device_list = CaptureFromVideoDevice::get_device_list();
                 }
-                if ui.add(egui::SelectableLabel::new(self.capture_mode.is_desktop(), "デスクトップ".to_string())).clicked() {
+                if ui.add(egui::SelectableLabel::new( self.capture_mode.is_desktop(), fl!(lang_loader().get(), "desktop") )).clicked() {
                     self.capture_mode = CaptureMode::new_desktop();
                 }
             });
@@ -421,10 +472,8 @@ impl WindowConfiguration {
                     });
             },
             CaptureMode::VideoDevice(_, device_id, _) => {
-                let video_device_list = CaptureFromVideoDevice::get_device_list();
-
                 egui::ComboBox::from_id_source(GUIIdList::DeviceList)
-                    .selected_text(format!("{}", video_device_list.get(*device_id as usize).unwrap_or(&"未選択".to_string())))
+                    .selected_text(format!( "{}", video_device_list.get(*device_id as usize).unwrap_or(&fl!(lang_loader().get(), "unselected")) ))
                     .width(ui.available_size().x - 10.0)
                     .show_ui(ui, |ui| {
                         for (id, name) in video_device_list.iter().enumerate() {
@@ -438,21 +487,75 @@ impl WindowConfiguration {
         }
         ui.end_row();
     }
+
+    // 外観の設定の view を返す
+    fn appearance_settings_view(&mut self, ui: &mut egui::Ui) {
+        use i18n_embed::LanguageLoader;
+        use crate::resource::Localizations;
+
+        GUI::new_grid(GUIIdList::AppearanceTab, 2, egui::Vec2::new(30.0, 5.0))
+            .striped(true)
+            .show(ui, |ui| {
+                // テーマ
+                let style = (*ui.ctx().style()).clone();
+                ui.label(fl!(lang_loader().get(), "theme"));
+                ui.horizontal(|ui| {
+                    if ui.add(egui::SelectableLabel::new(style.visuals == Visuals::dark(), "🌙 Dark")).clicked() {
+                        ui.ctx().set_visuals(Visuals::dark());
+                        gui_config().get().visuals = Some(Visuals::dark());
+                    }
+                    if ui.add(egui::SelectableLabel::new(style.visuals == Visuals::light(), "☀ Light")).clicked() {
+                        ui.ctx().set_visuals(Visuals::light());
+                        gui_config().get().visuals = Some(Visuals::light());
+                    }
+                });
+                ui.end_row();
+
+                // 言語
+                let now_lang = lang_loader().get().current_language();
+                let lang_list = lang_loader().get().available_languages(&Localizations).unwrap();
+                ui.label(fl!(lang_loader().get(), "language"));
+                egui::ComboBox::from_id_source(GUIIdList::LanguageKind)
+                    .selected_text(format!("{}-{}", now_lang.language, now_lang.region.unwrap().as_str()))
+                    .show_ui(ui, |ui| {
+                        for lang in &lang_list {
+                            if ui.add(egui::SelectableLabel::new(&now_lang == lang, format!("{}-{}", lang.language, lang.region.unwrap().as_str()))).clicked() {
+                                lang_loader().change(lang.clone());
+                            }
+                        }
+                    });
+                ui.end_row();
+            });
+    }
 }
 impl GUIModelTrait for WindowConfiguration {
-    fn name(&self) -> &'static str { "状態" }
+    fn name(&self) -> String { fl!(lang_loader().get(), "status") }
     fn show(&mut self, ctx: &egui::CtxRef) {
-        egui::Window::new( format!("{}: {:?}", self.name(), self.now_scene) )
+        egui::Window::new( format!("{}:{:?} {}:{:.0}%", self.name(), self.now_scene, fl!(lang_loader().get(), "next"), self.prev_match_ratio * 100.0) )
             .default_rect(Self::get_initial_window_rect())
             .show(ctx, |ui| self.ui(ui));
     }
-    fn setup(&mut self, ctx: &egui::CtxRef) {
+    fn setup(&mut self, _ctx: &egui::CtxRef) {
         self.video_device_id = -1;
     }
 }
 impl GUIViewTrait for WindowConfiguration {
     fn ui(&mut self, ui: &mut egui::Ui) {
-        self.source_settings_view(ui);
+        ui.horizontal(|ui| {
+            ui.selectable_value(&mut self.config_tab, ConfigTab::Source, fl!(lang_loader().get(), "tab_source"));
+            ui.selectable_value(&mut self.config_tab, ConfigTab::Appearance, fl!(lang_loader().get(), "tab_appearance"));
+        });
+        ui.separator();
+
+        match self.config_tab {
+            ConfigTab::Source => {
+                self.source_settings_view(ui);
+            },
+            ConfigTab::Appearance => {
+                self.appearance_settings_view(ui);
+            },
+        }
+
         ui.allocate_space(ui.available_size());
     }
 }
@@ -463,6 +566,7 @@ struct WindowBattleInformationGroup {
     data: Option<Box<dyn SmashbrosDataTrait>>,
 }
 impl WindowBattleInformationGroup {
+    // BattleInformationGroup を表示するのに必要なデータを設定する
     fn set_data(&mut self, data: Box<dyn SmashbrosDataTrait>) {
         self.data = Some(data);
     }
@@ -482,8 +586,8 @@ impl WindowBattleInformationGroup {
             .min_row_height(16.0)
             .show(ui, |ui| {
                 ui.end_row();
-                if let Some(order_texture) = unsafe{ SMASHBROS_RESOURCE.get() }.get_order_handle(data.get_order(player_id)) {
-                    let size = unsafe{ SMASHBROS_RESOURCE.get() }.get_image_size(order_texture).unwrap();
+                if let Some(order_texture) = smashbros_resource().get().get_order_handle(data.get_order(player_id)) {
+                    let size = smashbros_resource().get().get_image_size(order_texture).unwrap();
                     ui.add_sized( [10.0, 16.0], egui::Image::new(order_texture, size * egui::Vec2::new(0.25, 0.25)) );
                 } else {
                     ui.add_sized( [10.0, 16.0], egui::Label::new("?") );
@@ -595,8 +699,12 @@ impl WindowWinsGraph {
     fn set_data(&mut self, data: SmashbrosData, data_list: Vec<SmashbrosData>, wins_lose: (i32, i32), win_rate: f32) {
         let mut data_list = data_list;
         data_list.reverse();
-        self.point_list = data_list.iter().enumerate().map(|(x, data)| {
-            plot::Value::new(x as f64, data.get_power(0) as f64)
+        self.point_list = data_list.iter().enumerate().filter_map(|(x, data)| {
+            if data.get_power(0) < 0 {
+                return None;
+            }
+
+            Some(plot::Value::new(x as f64, data.get_power(0) as f64))
         }).collect::<Vec<plot::Value>>();
 
         self.now_data = Some(data);
@@ -616,8 +724,10 @@ impl WindowWinsGraph {
             .show_axes([false, false])
             .line(plot::Line::new(line_values).color(egui::Color32::WHITE))
             .points(
-                plot::Points::new(points_values).radius(2.0).color(egui::Color32::RED)
-                    .name(format!("世界戦闘力\n{}", self.last_power))
+                plot::Points::new(points_values).radius(2.0)
+                    // Light モードのときだけ点を白にすることで、GSP だけをクリッピングして表示しやすいようにする
+                    .color(if ui.ctx().style().visuals == Visuals::dark() { egui::Color32::RED } else { egui::Color32::WHITE })
+                    .name(format!("{}\n{}", fl!(lang_loader().get(), "GSP"), self.last_power))
             );
 
         GUI::new_grid("wins_graph_group", 2, egui::Vec2::new(0.0, 0.0))
@@ -625,21 +735,33 @@ impl WindowWinsGraph {
             .show(ui, |ui| {
                 GUI::new_grid("wins_group", 6, egui::Vec2::new(0.0, 0.0))
                     .show(ui, |ui| {
-                        // 勝率
-                        if let Some(now_data) = &self.now_data {
-                            if now_data.is_decided_character_name(0) && now_data.is_decided_character_name(1) {
-                                ui.add_sized( [16.0, 16.0], GUI::get_chara_image(now_data.as_ref(), 0, [16.0, 16.0]).unwrap());
-                                ui.add_sized( [16.0, 16.0], egui::Label::new("vs"));
-                                ui.add_sized( [16.0, 16.0], GUI::get_chara_image(now_data.as_ref(), 1, [16.0, 16.0]).unwrap());
-                                ui.add_sized( [16.0, 16.0], egui::Label::new(format!("{:3.1}%", 100.0 * self.win_rate)));
-                            }
+                        let now_data = match &self.now_data {
+                            Some(data) => data,
+                            None => return,
+                        };
+                        if !now_data.is_decided_character_name(0) || !now_data.is_decided_character_name(1) {
+                            return;
                         }
-                        ui.end_row();
 
                         // 対キャラクター勝率
+                        if let Some(image) = GUI::get_chara_image(now_data.as_ref(), 0, [16.0, 16.0]) {
+                            ui.add_sized( [16.0, 16.0], image);
+                        } else {
+                            ui.add_sized( [16.0, 16.0], egui::Label::new("1p"));
+                        }
+                        ui.add_sized( [16.0, 16.0], egui::Label::new("vs"));
+                        if let Some(image) = GUI::get_chara_image(now_data.as_ref(), 1, [16.0, 16.0]) {
+                            ui.add_sized( [16.0, 16.0], image);
+                        } else {
+                            ui.add_sized( [16.0, 16.0], egui::Label::new("2p"));
+                        }
+                        ui.add_sized( [16.0, 16.0], egui::Label::new(format!("{:3.1}%", 100.0 * self.win_rate)));
+                        ui.end_row();
+
                     });
                 
                 ui.add(gcp_plot);
             });
     }
 }
+ 

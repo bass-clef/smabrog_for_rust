@@ -1,6 +1,7 @@
 #![cfg(windows)]
 #![windows_subsystem = "windows"]
 
+use i18n_embed_fl::fl;
 use opencv::{
     core,
     imgcodecs,
@@ -15,6 +16,7 @@ use winapi::um::wingdi::*;
 use winapi::um::winnt::HANDLE;
 use winapi::um::winuser::*;
 
+use crate::resource::lang_loader;
 use crate::scene::{
     ReadyToFightScene,
     SceneTrait
@@ -25,28 +27,21 @@ use crate::utils::utils::to_wchar;
 // 検出する方法
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub enum CaptureMode {
-    Empty(&'static str),
-    Desktop(&'static str),
+    Empty(String),
+    Desktop(String),
     /// _, device_id
-    VideoDevice(&'static str, i32, String),
+    VideoDevice(String, i32, String),
     /// _, window_caption
-    Window(&'static str, String),
+    Window(String, String),
 }
 impl CaptureMode {
-    pub const ALL: [CaptureMode; 4] = [
-        Self::Empty { 0:"未設定" },
-        Self::Desktop { 0:"デスクトップ" },
-        Self::VideoDevice { 0:"ビデオデバイス", 1:-1, 2:String::new() },
-        Self::Window { 0:"ウィンドウ", 1:String::new() },
-    ];
-
-    pub fn new_empty() -> Self { Self::Empty { 0:"未設定" } }
-    pub fn new_desktop() -> Self { Self::Desktop { 0:"デスクトップ" } }
+    pub fn new_empty() -> Self { Self::Empty { 0: fl!(lang_loader().get(), "empty") } }
+    pub fn new_desktop() -> Self { Self::Desktop { 0: fl!(lang_loader().get(), "desktop") } }
     pub fn new_video_device(device_id: i32) -> Self {
-        Self::VideoDevice { 0:"ビデオデバイス", 1:device_id, 2:String::new() }
+        Self::VideoDevice { 0: fl!(lang_loader().get(), "video_device"), 1:device_id, 2:String::new() }
     }
     pub fn new_window(win_caption: String) -> Self {
-        Self::Window { 0:"ウィンドウ", 1:win_caption }
+        Self::Window { 0: fl!(lang_loader().get(), "window"), 1:win_caption }
     }
 
     pub fn is_default(&self) -> bool {
@@ -80,7 +75,7 @@ impl CaptureMode {
 }
 impl Default for CaptureMode {
     fn default() -> Self {
-        Self::ALL[0].clone()
+        Self::new_empty()
     }
 }
 impl std::fmt::Display for CaptureMode {
@@ -716,8 +711,8 @@ static mut CODECS: WrappedCodec = WrappedCodec {
     codecs: None
 };
 
-/// キャプチャ用のバッファ(動画ファイル[temp.*])を管理するクラス
 use std::time::{Duration, Instant};
+/// キャプチャ用のバッファ(動画ファイル[temp.*])を管理するクラス
 pub struct CaptureFrameStore {
 	writer: videoio::VideoWriter,
     reader: videoio::VideoCapture,
