@@ -24,13 +24,15 @@ pub struct ValueGuesser<K: Clone + Eq + std::hash::Hash> {
     max_border: i32,
 }
 impl<K: std::hash::Hash + Clone + Eq> ValueGuesser<K> {
+    pub const DEFAULT_MAX_BORDER: i32 = 5;
+
     /// @param value 初期値
     pub fn new(value: K) -> Self {
         Self {
             value_count_list: HashMap::new(),
             max_value: value.clone(),
             max_count: 0,
-            max_border: 5,
+            max_border: Self::DEFAULT_MAX_BORDER,
         }
     }
 
@@ -555,8 +557,8 @@ impl SmashbrosDataTrait for SmashbrosData {
         !self.chara_list.is_empty() && self.chara_list[player_number as usize].is_decided()
     }
     fn is_decided_stock(&self, player_number: i32) -> bool {
-        // ストック数が 1 の時はそれ以上減ることは仕様上ないはずなので skip
-        !self.stock_list.is_empty() && 1 == self.stock_list[player_number as usize].get()
+        // ストック数が 1 以下の時はそれ以上減ることは仕様上ないので決定済みとする
+        !self.stock_list.is_empty() && self.stock_list[player_number as usize].get() <= 1
     }
     fn is_decided_order(&self, player_number: i32) -> bool {
         !self.order_list.is_empty() && self.order_list[player_number as usize].is_decided()
@@ -637,6 +639,9 @@ impl SmashbrosData {
     ];
     // キャラクター名が不明時の文字列
     const CHARACTER_NAME_UNKNOWN: &'static str = "unknown";
+
+    // ストックの最低一致数ボーダー
+    pub const DEFAULT_STOCK_MAX_BORDER: i32 = 2;
 
     fn new() -> Self {
         Self {
@@ -725,7 +730,7 @@ impl SmashbrosData {
 
             self.chara_list.push( ValueGuesser::new(SmashbrosData::CHARACTER_NAME_UNKNOWN.to_string()) );
             self.group_list.push( ValueGuesser::new(PlayerGroup::Unknown) );
-            self.stock_list.push( ValueGuesser::new(-1).set_border(2) );
+            self.stock_list.push( ValueGuesser::new(-1).set_border(Self::DEFAULT_STOCK_MAX_BORDER) );
             self.order_list.push( ValueGuesser::new(-1) );
             self.power_list.push( ValueGuesser::new(-1) );
         }
@@ -938,8 +943,12 @@ impl SmashbrosData {
                     let other_player_number = self.player_count-1 - player_number;
                     let other_maybe_order = self.player_count - (maybe_order-1);
                     if !self.is_decided_order(other_player_number) {
-                        if self.order_list[other_player_number as usize].guess(&other_maybe_order) {
-                            log::info!( "order by {}p {}p: {}? => {:?}", player_number+1, other_player_number+1, other_maybe_order, self.get_order(other_player_number) );
+                        log::info!( "order by {}p {}p:", player_number+1, other_player_number+1);
+                        for _ in 0..ValueGuesser::<i32>::DEFAULT_MAX_BORDER {
+                            self.guess_order(other_player_number, other_maybe_order);
+                            if self.is_decided_order(other_player_number) {
+                                break;
+                            }
                         }
                     }
                 },
@@ -965,7 +974,7 @@ impl SmashbrosData {
         (0..self.player_count).collect::<Vec<i32>>().iter().all( |&player_number| self.is_decided_order(player_number) )
     }
 
-    /// プレイヤーの戦闘力の推測 (一桁以下は無視)
+    /// プレイヤーの戦闘力の推測 (2桁以下は無視)
     pub fn guess_power(&mut self, player_number: i32, maybe_power: i32) {
         if self.is_decided_power(player_number) || maybe_power < 100 {
             return;
@@ -983,5 +992,97 @@ impl SmashbrosData {
     /// プレイヤーの結果は取得できているか
     pub fn all_decided_result(&self) -> bool {
         self.all_decided_power() && self.all_decided_order()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_character() {
+        // resource との一致でのキャラクターの推測
+        let mut data = SmashbrosData::default();
+        data.initialize_battle(2);
+        data.guess_character_name(0, "MARIO".to_string());
+        assert_eq!(data.is_decided_character_name(0), true);
+        assert_eq!(data.get_character(0), "MARIO".to_string());
+
+        // 類似名でのキャラクターの推測
+        let mut data = SmashbrosData::default();
+        data.initialize_battle(2);
+        for _ in 0..ValueGuesser::<i32>::DEFAULT_MAX_BORDER {
+            data.guess_character_name(0, "MARI".to_string());
+        }
+        assert_eq!(data.is_decided_character_name(0), true);
+        assert_eq!(data.get_character(0), "MARIO".to_string());
+    }
+    
+    #[test]
+    fn test_stock() {
+        // ルールでの制限
+        let mut data = SmashbrosData::default();
+        data.initialize_battle(2);
+        data.set_rule(BattleRule::Time);
+        for _ in 0..SmashbrosData::DEFAULT_STOCK_MAX_BORDER {
+            data.guess_stock(0, 1);
+        }
+        assert_eq!(data.is_decided_stock(0), true);
+        assert_eq!(data.get_stock(0), 1);
+
+        let mut data = SmashbrosData::default();
+        data.initialize_battle(2);
+        data.set_rule(BattleRule::Stock);
+        for _ in 0..SmashbrosData::DEFAULT_STOCK_MAX_BORDER {
+            data.guess_stock(0, 1);
+        }
+        assert_eq!(data.is_decided_stock(0), true);
+        assert_eq!(data.get_stock(0), 1);
+
+        // ストックの推測
+        let mut data = SmashbrosData::default();
+        data.initialize_battle(2);
+        for _ in 0..SmashbrosData::DEFAULT_STOCK_MAX_BORDER {
+            data.guess_stock(0, 1);
+        }
+        assert_eq!(data.is_decided_stock(1), true);
+        
+    }
+
+    #[test]
+    fn test_order() {
+        // 順位の推測
+        let mut data = SmashbrosData::default();
+        data.initialize_battle(2);
+        for _ in 0..ValueGuesser::<i32>::DEFAULT_MAX_BORDER {
+            data.guess_order(0, 1);
+        }
+        assert_eq!(data.is_decided_order(0), true);
+        assert_eq!(data.get_order(0), 1);
+
+        // 他のプレイヤーの順位での推測
+        assert_eq!(data.is_decided_order(1), true);
+        assert_eq!(data.get_order(1), 2);
+
+        // 他のプレイヤーの順位のストックの減少
+        assert_eq!(data.is_decided_stock(1), true);
+        assert_eq!(data.get_stock(1), 0);
+    }
+
+    #[test]
+    fn test_power() {
+        // 世界戦闘力の推測, (2桁以下は無視)
+        let mut data = SmashbrosData::default();
+        data.initialize_battle(2);
+        for _ in 0..ValueGuesser::<i32>::DEFAULT_MAX_BORDER {
+            data.guess_power(0, 99);
+        }
+        assert_eq!(data.is_decided_power(0), false);
+
+        for _ in 0..ValueGuesser::<i32>::DEFAULT_MAX_BORDER {
+            data.guess_power(0, 100);
+        }
+        assert_eq!(data.is_decided_power(0), true);
+        assert_eq!(data.get_power(0), 100);
     }
 }

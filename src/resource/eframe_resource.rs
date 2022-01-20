@@ -51,6 +51,20 @@ impl SmashbrosResource {
         }
     }
 
+    pub fn new_for_test() -> Self {
+        let text = SmashbrosResourceText::new();
+        // icon および image は GUI フレームワークからもらう frame が必要なので、test では空のままにしておく
+
+        Self {
+            version: text.version,
+            character_list: text.character_list,
+            icon_list: HashMap::new(),
+            order_image_list: HashMap::new(),
+            image_size_list: HashMap::new(),
+            i18n_convert_list: text.i18n_convert_list,
+        }
+    }
+
     fn get_texture_id(path: &str, frame: &mut eframe::epi::Frame<'_>) -> (TextureId, eframe::egui::Vec2) {
         let image = opencv::imgcodecs::imread(path, opencv::imgcodecs::IMREAD_UNCHANGED).unwrap();
         let image_size = ( image.cols() * image.rows() * 4 ) as usize;
@@ -112,7 +126,8 @@ impl WrappedSmashbrosResource {
     // 参照して返さないと、unwrap() で move 違反がおきてちぬ！
     pub fn get(&mut self) -> &mut SmashbrosResource {
         if self.smashbros_resource.is_none() {
-            self.init(None);
+            log::error!("SmashbrosResource is not initialized. Call init() first.");
+            self.smashbros_resource = Some(SmashbrosResource::new_for_test());
         }
         self.smashbros_resource.as_mut().unwrap()
     }
