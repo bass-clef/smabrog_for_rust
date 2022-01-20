@@ -14,7 +14,6 @@ use std::collections::HashMap;
 use crate::resource::*;
 
 
-
 /// 値を推測して一番高いものを保持しておくためのクラス
 #[derive(Clone, Debug)]
 pub struct ValueGuesser<K: Clone + Eq + std::hash::Hash> {

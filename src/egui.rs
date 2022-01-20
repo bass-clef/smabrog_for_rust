@@ -8,7 +8,7 @@ use eframe::{
     },
 };
 use i18n_embed_fl::fl;
-use opencv::prelude::MatTrait;
+use opencv::prelude::MatTraitConst;
 
 use crate::capture::CaptureMode;
 use crate::data::{

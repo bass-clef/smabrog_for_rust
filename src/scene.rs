@@ -171,7 +171,7 @@ impl SceneJudgment {
                     let mut temp_captured_image = converted_captured_image.clone();
 
                     match core::bitwise_and(&converted_captured_image, &mask_image,
-                        &mut temp_captured_image, &core::no_array().unwrap())
+                        &mut temp_captured_image, &core::no_array())
                     {
                         Ok(_) => (),
                         Err(_e) => {
@@ -183,7 +183,7 @@ impl SceneJudgment {
                 }
 
                 imgproc::match_template(&converted_captured_image, &self.color_image, &mut result,
-                    imgproc::TM_CCOEFF_NORMED, &core::no_array().unwrap()).unwrap();
+                    imgproc::TM_CCOEFF_NORMED, &core::no_array()).unwrap();
             },
             ColorFormat::RGBA => {
                 // 透過画像の場合は普通に trans_mask 付きでテンプレートマッチング
@@ -199,9 +199,9 @@ impl SceneJudgment {
         utils::patch_inf_ns(&mut result, -0.0).unwrap();
 
         core::min_max_loc(&result,
-            &mut 0.0, &mut self.prev_match_ratio,
-            &mut core::Point::default(), &mut self.prev_match_point,
-            &core::no_array().unwrap()
+            None, Some(&mut self.prev_match_ratio),
+            None, Some(&mut self.prev_match_point),
+            &core::no_array()
         ).unwrap();
     }
 
@@ -625,7 +625,7 @@ impl HamVsSpamScene {
         let mut temp_capture_image = core::Mat::default();
         let mut work_capture_image = core::Mat::default();
         imgproc::threshold(&gray_capture_image, &mut work_capture_image, 200.0, 255.0, imgproc::THRESH_BINARY)?;
-        core::bitwise_not(&work_capture_image, &mut temp_capture_image, &core::no_array()?)?;
+        core::bitwise_not(&work_capture_image, &mut temp_capture_image, &core::no_array())?;
 
         // プレイヤー毎の位置で処理する
         let (width, height) = (capture_image.cols(), capture_image.rows());
@@ -940,13 +940,13 @@ impl GamePlayingScene {
         let mut temp_capture_image = core::Mat::default();
         let mut gray_number_area_image = core::Mat::default();
         utils::cvt_color_to(&capture_image, &mut gray_number_area_image, ColorFormat::GRAY as i32)?;
-        core::bitwise_and(&gray_number_area_image, stock_number_mask, &mut temp_capture_image, &core::no_array()?)?;
+        core::bitwise_and(&gray_number_area_image, stock_number_mask, &mut temp_capture_image, &core::no_array())?;
 
         // 近似白黒処理して
         let mut work_capture_image = core::Mat::default();
         imgproc::threshold(&temp_capture_image, &mut work_capture_image, 250.0, 255.0, imgproc::THRESH_BINARY)?;
-        core::bitwise_and(&gray_number_area_image, &work_capture_image, &mut temp_capture_image, &core::no_array()?)?;
-        core::bitwise_not(&temp_capture_image, &mut work_capture_image, &core::no_array()?)?;
+        core::bitwise_and(&gray_number_area_image, &work_capture_image, &mut temp_capture_image, &core::no_array())?;
+        core::bitwise_not(&temp_capture_image, &mut work_capture_image, &core::no_array())?;
 
         // プレイヤー毎に処理する
         let (width, height) = (capture_image.cols(), capture_image.rows());
@@ -1216,7 +1216,7 @@ impl ResultScene {
         let mut temp_capture_image = core::Mat::default();
         let mut gray_number_area_image = core::Mat::default();
         utils::cvt_color_to(&capture_image, &mut gray_number_area_image, ColorFormat::GRAY as i32)?;
-        core::bitwise_and(&gray_number_area_image, result_power_mask, &mut temp_capture_image, &core::no_array()?)?;
+        core::bitwise_and(&gray_number_area_image, result_power_mask, &mut temp_capture_image, &core::no_array())?;
 
         // プレイヤー毎に処理する
         let (width, height) = (capture_image.cols(), capture_image.rows());

@@ -409,7 +409,7 @@ impl CaptureFromWindow {
         let mut ready_to_fight_scene = ReadyToFightScene::new_gray();
         let mut find_capture = |own: &mut Self, content_area: &core::Rect, | -> bool {
             let capture_image = own.get_mat().unwrap();
-            if capture_image.empty().unwrap() {
+            if capture_image.empty() {
                 own.content_area = *content_area;
                 return false;
             }

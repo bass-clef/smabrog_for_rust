@@ -1,6 +1,6 @@
 
 use eframe::egui::TextureId;
-use opencv::prelude::MatTrait;
+use opencv::prelude::MatTraitConst;
 use serde::{
     Deserialize,
     Serialize,

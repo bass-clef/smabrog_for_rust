@@ -19,7 +19,7 @@ pub mod utils {
     /// src.channels() に応じて to_channels に変換する cvt_color をする
     /// src.channels() == to_channels なら src.copy_to(dst) をする
     pub fn cvt_color_to(src: &core::Mat, dst: &mut core::Mat, to_channels: i32) -> opencv::Result<()> {
-        let color_map = COLOR_MAP[src.channels()? as usize][to_channels as usize];
+        let color_map = COLOR_MAP[src.channels() as usize][to_channels as usize];
         if -1 == color_map {
             // コピーだけする
             src.copy_to(dst)?;
@@ -50,7 +50,7 @@ pub mod utils {
         let upper_mat = core::Mat::from_slice(&trans_color)?;
         let mut mask = core::Mat::default();
         core::in_range(&src, &lower_mat, &upper_mat, &mut mask)?;
-        core::bitwise_not(&mask, dst, &core::no_array()?)?;
+        core::bitwise_not(&mask, dst, &core::no_array())?;
 
         Ok(())
     }
@@ -73,14 +73,14 @@ pub mod utils {
                 if noise_fill {
                     imgproc::draw_contours(
                         src, &contours, i as i32, noise_color.unwrap_or(core::Scalar::new(255.0, 255.0, 255.0, 0.0)),
-                        1, imgproc::LINE_8, &core::no_array()?, std::i32::MAX, core::Point{x:0,y:0})?;
+                        1, imgproc::LINE_8, &core::no_array(), std::i32::MAX, core::Point{x:0,y:0})?;
                 }
                 continue;
             } else if max_size.unwrap_or(10_000.0) < area {
                 if noise_fill && max_size.is_some() {
                     imgproc::draw_contours(
                         src, &contours, i as i32, noise_color.unwrap_or(core::Scalar::new(255.0, 255.0, 255.0, 0.0)),
-                        1, imgproc::LINE_8, &core::no_array()?, std::i32::MAX, core::Point{x:0,y:0})?;
+                        1, imgproc::LINE_8, &core::no_array(), std::i32::MAX, core::Point{x:0,y:0})?;
                 }
                 continue;
             }
@@ -110,13 +110,13 @@ pub mod utils {
     /// Tesseract-OCR を Mat で叩く
     /// tesseract::ocr_from_frame だと「Warning: Invalid resolution 0 dpi. Using 70 instead.」がうるさかったので作成
     pub fn ocr_with_mat(image: &core::Mat) -> Tesseract {
-        let size = image.channels().unwrap() * image.cols() * image.rows();
+        let size = image.channels() * image.cols() * image.rows();
         let data: &[u8] = unsafe{ std::slice::from_raw_parts(image.datastart(), size as usize) };
 
         let tess = Tesseract::new(None, Some("eng")).unwrap()
             .set_page_seg_mode(tesseract_sys::TessPageSegMode_PSM_SINGLE_BLOCK)
             .set_frame(data, image.cols(), image.rows(),
-                image.channels().unwrap(), image.channels().unwrap() * image.cols()).unwrap()
+                image.channels(), image.channels() * image.cols()).unwrap()
             .set_source_resolution(70);
         
         tess
