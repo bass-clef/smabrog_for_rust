@@ -71,9 +71,10 @@ impl<K: std::hash::Hash + Clone + Eq> ValueGuesser<K> {
         *self.value_count_list.entry(value.clone()).or_insert(0) += 1;
 
         if self.max_count < self.value_count_list[value] {
+            let is_changed = &self.max_value != value;
             self.max_value = value.clone();
             self.max_count = self.value_count_list[value];
-            return true;
+            return is_changed;
         }
 
         return false;
@@ -398,6 +399,9 @@ pub struct SmashbrosData {
     stock_list: Vec<ValueGuesser<i32>>,
     order_list: Vec<ValueGuesser<i32>>,
     power_list: Vec<ValueGuesser<i32>>,
+
+    prev_chara_list: Vec<String>,
+    prev_power_list: Vec<i32>,
 }
 impl Default for SmashbrosData {
     fn default() -> Self { Self::new() }
@@ -662,6 +666,9 @@ impl SmashbrosData {
             stock_list: vec![ValueGuesser::new(-1)],
             order_list: vec![ValueGuesser::new(-1)],
             power_list: vec![ValueGuesser::new(-1)],
+
+            prev_chara_list: vec![],
+            prev_power_list: vec![],
         }
     }
 
@@ -671,6 +678,19 @@ impl SmashbrosData {
         if SmashbrosData::CHARACTER_NAME_UNKNOWN == self.chara_list[0].get() {
             // 初期値代入してあったら処理しない(全部同時にされるので chara_list だけで比較)
             return false;
+        }
+
+        if self.player_count as usize == self.prev_chara_list.len() {
+            let prev_chara_list = self.prev_chara_list.clone();
+            let prev_power_list = self.prev_power_list.clone();
+            for i in 0..self.player_count as usize {
+                if prev_chara_list[i] != self.chara_list[i].get() {
+                    self.prev_chara_list[i] = self.chara_list[i].get();
+                }
+                if self.power_list[i].is_decided() && prev_power_list[i] != self.power_list[i].get() {
+                    self.prev_power_list[i] = self.power_list[i].get();
+                }
+            }
         }
 
         // 削除
@@ -973,10 +993,26 @@ impl SmashbrosData {
         (0..self.player_count).collect::<Vec<i32>>().iter().all( |&player_number| self.is_decided_order(player_number) )
     }
 
-    /// プレイヤーの戦闘力の推測 (2桁以下は無視)
+    /// プレイヤーの戦闘力の推測 (3桁以下は無視)
     pub fn guess_power(&mut self, player_number: i32, maybe_power: i32) {
-        if self.is_decided_power(player_number) || maybe_power < 100 {
+        if self.is_decided_power(player_number) || maybe_power < 1000 {
             return;
+        }
+
+        // 同じキャラを使用していた場合のみ
+        // 前回の戦闘力と比較して、1/2 に差分が収まっていない場合の戦闘力は誤検出とみなす
+        // WARN:[逆VIP - VIP]間の差が大きい区間ではうまく検出できない可能性がある
+        if self.prev_power_list.len() as i32 == self.player_count {
+            if self.is_decided_character_name(player_number) && self.get_character(player_number) == self.prev_chara_list[player_number as usize] {
+                if self.prev_power_list[player_number as usize] != -1 {
+                    let prev_border = self.prev_power_list[player_number as usize] / 2;
+                    let diff_power = (self.prev_power_list[player_number as usize] - maybe_power).abs();
+                    if prev_border < diff_power {
+                        log::info!("power false detection? {}p: {}?", player_number+1, maybe_power);
+                        return;
+                    }
+                }
+            }
         }
 
         if self.power_list[player_number as usize].guess(&maybe_power) {
@@ -1070,18 +1106,34 @@ mod tests {
 
     #[test]
     fn test_power() {
-        // 世界戦闘力の推測, (2桁以下は無視)
         let mut data = SmashbrosData::default();
         data.initialize_battle(2);
+        data.guess_character_name(0, "MARIO".to_string());
+        data.set_id(Some("ObjectId(\"test_data_id\")".to_string()));
+
+        // 世界戦闘力の推測, (2桁以下は無視)
         for _ in 0..ValueGuesser::<i32>::DEFAULT_MAX_BORDER {
-            data.guess_power(0, 99);
+            data.guess_power(0, 999);
         }
         assert_eq!(data.is_decided_power(0), false);
 
+        // 正常確認
         for _ in 0..ValueGuesser::<i32>::DEFAULT_MAX_BORDER {
-            data.guess_power(0, 100);
+            data.guess_power(0, 10000);
         }
         assert_eq!(data.is_decided_power(0), true);
-        assert_eq!(data.get_power(0), 100);
+        assert_eq!(data.get_power(0), 10000);
+
+        data.initialize_battle(2);
+        data.guess_character_name(0, "MARIO".to_string());
+
+        // 1/2 差分無視確認
+        for _ in 0..ValueGuesser::<i32>::DEFAULT_MAX_BORDER {
+            data.guess_power(0, 5000);
+        }
+        data.guess_power(0, 15000);
+
+        assert_eq!(data.get_power(0), 11000);
+        assert_eq!(data.is_decided_power(0), false);
     }
 }
