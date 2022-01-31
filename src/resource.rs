@@ -176,7 +176,6 @@ impl BattleHistory {
             }
         })
     }
-
     
     // コレクションから検索して返す
     pub fn find_data(&self, filter: Option<Document>, find_options: FindOptions) -> Option<Vec<SmashbrosData>> {
@@ -242,13 +241,20 @@ impl BattleHistory {
         )
     }
 
-    /// 特定のキャラクターの戦歴を取得
-    pub fn find_data_by_chara_list(&self, character_list: Vec<String> ) -> Option<Vec<SmashbrosData>> {
+    /// 特定のキャラクターの戦歴を直近 limit 件取得
+    pub fn find_data_by_chara_list(&self, character_list: Vec<String>, limit: i64, use_in: bool) -> Option<Vec<SmashbrosData>> {
+        use crate::resource::bson::doc;
+        let filter = if use_in {
+            doc! { "chara_list": {"$in": character_list } }
+        } else {
+            doc! { "chara_list": character_list }
+        };
+
         self.find_data(
-            Some(crate::resource::bson::doc! { "chara_list": character_list }),
+            Some(filter),
             FindOptions::builder()
-                .sort(crate::resource::bson::doc! { "_id": -1 })
-                .limit(1000)    // 念の為とこれ以上とっても結果が変わらなそう
+                .sort(doc! { "_id": -1 })
+                .limit(limit)    // 念の為とこれ以上とっても結果が変わらなそう
                 .build()
         )
     }

@@ -8,7 +8,9 @@ use eframe::{
     },
 };
 use i18n_embed_fl::fl;
+use linked_hash_map::LinkedHashMap;
 use opencv::prelude::MatTraitConst;
+use std::collections::HashMap;
 
 use crate::capture::CaptureMode;
 use crate::data::{
@@ -93,8 +95,8 @@ impl GUI {
     }
 
     // data の player_id のキャラ画像を指定 size で返す
-    pub fn get_chara_image<D: SmashbrosDataTrait + ?Sized>(data: &D, player_id: i32, size: [f32; 2]) -> Option<egui::Image> {
-        if let Some(chara_texture) = smashbros_resource().get().get_image_handle(data.get_character(player_id)) {
+    pub fn get_chara_image(chara_name: String, size: [f32; 2]) -> Option<egui::Image> {
+        if let Some(chara_texture) = smashbros_resource().get().get_image_handle(chara_name) {
             return Some(egui::Image::new(chara_texture, egui::Vec2::new(size[0], size[1])));
         }
 
@@ -127,6 +129,10 @@ impl GUI {
 
     // 対戦情報の更新
     pub fn update_battle_informations(&mut self) {
+        if !self.engine.update_now_data() {
+            return;
+        }
+
         // 対戦中情報
         self.window_battle_information.battle_information.set_data(Box::new( self.engine.get_now_data() ));
 
@@ -138,13 +144,15 @@ impl GUI {
 
             self.window_battle_history.battle_information_list.push(battle_information);
         }
+        let data_list = self.engine.get_data_all_by_now_chara();
+        self.window_battle_history.set_data(self.engine.get_wins_by_data_list_groupby_character(data_list));
 
-        let data_list = self.engine.get_data_latest_500_by_now_chara();
+        let data_list = self.engine.get_data_latest_by_now_chara();
         self.window_battle_information.wins_graph.set_data(
             self.engine.get_now_data(),
             self.engine.get_data_latest_10(),
             self.engine.get_win_lose_latest_10(),
-            self.engine.get_wins_by_data_list(data_list)
+            self.engine.get_wins_by_data_list(data_list),
         );
 
         // 検出状態
@@ -317,10 +325,23 @@ impl GUIViewTrait for WindowBattleInformation {
     }
 }
 
+// 戦歴タブ
+#[derive(PartialEq)]
+enum WindowBattleHistoryTab {
+    BattleHistory,
+    CharacterTable,
+}
+impl Default for WindowBattleHistoryTab {
+    fn default() -> Self { WindowBattleHistoryTab::BattleHistory }
+}
+
 // 戦歴
 #[derive(Default)]
 struct WindowBattleHistory {
     pub battle_information_list: Vec<WindowBattleInformationGroup>,
+    pub all_battle_rate_list: LinkedHashMap<String, (f32, i32)>,  // キャラ別, (勝率と試合数)
+    window_battle_history_tab: WindowBattleHistoryTab,
+    chara_plot_list: HashMap<String, plot::Value>,
 }
 impl WindowBattleHistory {
     pub fn get_initial_window_size() -> egui::Vec2 {
@@ -335,6 +356,109 @@ impl WindowBattleHistory {
             Self::get_initial_window_size(),
         )
     }
+
+    const CHARA_IMAGE_ZOOM: f32 = 5.0;
+    const CHARA_Y_GROUP_COUNT: i32 = 10;
+    pub fn set_data(&mut self, all_battle_rate_list: LinkedHashMap<String, (f32, i32)>) {
+        self.all_battle_rate_list = all_battle_rate_list;
+
+        let mut group_count = HashMap::new();
+        for (chara_name, (wins_rate, battle_count)) in &self.all_battle_rate_list {
+            let y = if *battle_count == 0 {
+                -10.0
+            } else {
+                *wins_rate as f64 * 100.0 as f64
+            };
+
+            let y_group = y as i32 / Self::CHARA_Y_GROUP_COUNT;
+            *group_count.entry(y_group).or_insert(-1) += 1;
+
+            self.chara_plot_list.entry(chara_name.clone()).or_insert(plot::Value::new(
+                ((group_count[&y_group] % Self::CHARA_Y_GROUP_COUNT) as f32 * Self::CHARA_IMAGE_ZOOM) as f64,
+                y as f64 - (group_count[&y_group] / Self::CHARA_Y_GROUP_COUNT) as f64 * Self::CHARA_IMAGE_ZOOM as f64,
+            ));
+        }
+    }
+
+    // 10戦の履歴表示
+    fn battle_history_view(&mut self, ui: &mut egui::Ui) {
+        for group in &mut self.battle_information_list {
+            group.show_ui(ui);
+            ui.separator();
+        }
+    }
+
+    // キャラ別のグラフ表示
+    fn character_table_view(&mut self, ui: &mut egui::Ui) {
+
+        let mut character_table_plot = plot::Plot::new(GUIIdList::PowerPlot)
+            .width(ui.available_size().x - 5.0)
+            .height(ui.available_size().y - 5.0)
+            .legend(plot::Legend::default().text_style(egui::TextStyle::Small))
+            .show_axes([false, true])
+            .line(
+                plot::Line::new(
+                    plot::Values::from_values(vec![plot::Value::new(-2.5, 0.0), plot::Value::new(25.5, 0.0), plot::Value::new(47.5, 0.0)]),
+                ).color(egui::Color32::RED)
+                .fill(10.0)
+                .name("負け")
+            )
+            .line(
+                plot::Line::new(
+                    plot::Values::from_values(vec![plot::Value::new(-2.5, 10.0), plot::Value::new(25.5, 10.0), plot::Value::new(47.5, 10.0)]),
+                ).color(egui::Color32::LIGHT_RED)
+                .fill(40.0)
+                .name("不得手")
+            )
+            .line(
+                plot::Line::new(
+                    plot::Values::from_values(vec![plot::Value::new(-2.5, 40.0), plot::Value::new(25.5, 40.0), plot::Value::new(47.5, 40.0)]),
+                ).color(egui::Color32::YELLOW)
+                .fill(60.0)
+                .name("丁度")
+            )
+            .line(
+                plot::Line::new(
+                    plot::Values::from_values(vec![plot::Value::new(-2.5, 60.0), plot::Value::new(25.5, 60.0), plot::Value::new(47.5, 60.0)]),
+                ).color(egui::Color32::LIGHT_GREEN)
+                .fill(90.0)
+                .name("得意")
+            )
+            .line(
+                plot::Line::new(
+                    plot::Values::from_values(vec![plot::Value::new(-2.5, 90.0), plot::Value::new(25.5, 90.0), plot::Value::new(47.5, 90.0)]),
+                ).color(egui::Color32::LIGHT_BLUE)
+                .fill(100.0)
+                .name("勝ち")
+            );
+
+        for (chara_name, (wins_rate, battle_count)) in &self.all_battle_rate_list {
+            let chara_texture = match smashbros_resource().get().get_image_handle(chara_name.clone()) {
+                Some(chara_texture) => chara_texture,
+                None => return,
+            };
+
+            // 試合数がないものは負数の領域に表示する
+            character_table_plot = character_table_plot.image(
+                    plot::PlotImage::new(
+                        chara_texture,
+                        self.chara_plot_list[chara_name].clone(),
+                        egui::Vec2::new(Self::CHARA_IMAGE_ZOOM, Self::CHARA_IMAGE_ZOOM),
+                    ),
+                )
+                .text(plot::Text::new(
+                        plot::Value::new(self.chara_plot_list[chara_name].x, self.chara_plot_list[chara_name].y - Self::CHARA_IMAGE_ZOOM as f64 * 0.6),
+                        &format!("{:3.1}", wins_rate * 100.0)
+                    ).color(egui::Color32::WHITE)
+                );
+        };
+
+        GUI::new_grid(GUIIdList::AppearanceTab, 2, egui::Vec2::new(30.0, 5.0))
+            .striped(true)
+            .show(ui, |ui| {
+                ui.add(character_table_plot);
+            });
+    }
 }
 impl GUIModelTrait for WindowBattleHistory {
     fn name(&self) -> String { fl!(lang_loader().get(), "battle_history") }
@@ -347,11 +471,17 @@ impl GUIModelTrait for WindowBattleHistory {
 }
 impl GUIViewTrait for WindowBattleHistory {
     fn ui(&mut self, ui: &mut egui::Ui) {
-        for group in &mut self.battle_information_list {
-            group.show_ui(ui);
-            ui.separator();
+        ui.horizontal(|ui| {
+            ui.selectable_value(&mut self.window_battle_history_tab, WindowBattleHistoryTab::BattleHistory, fl!(lang_loader().get(), "tab_battle_history"));
+            ui.selectable_value(&mut self.window_battle_history_tab, WindowBattleHistoryTab::CharacterTable, fl!(lang_loader().get(), "tab_character_table"));
+        });
+        ui.separator();
+
+        match self.window_battle_history_tab {
+            WindowBattleHistoryTab::BattleHistory => self.battle_history_view(ui),
+            WindowBattleHistoryTab::CharacterTable => self.character_table_view(ui),
         }
-        
+
         ui.allocate_space(ui.available_size());
     }
 }
@@ -363,9 +493,7 @@ enum ConfigTab {
     Appearance,
 }
 impl Default for ConfigTab {
-    fn default() -> Self {
-        ConfigTab::Source
-    }
+    fn default() -> Self { ConfigTab::Source }
 }
 
 // 設定
@@ -548,12 +676,8 @@ impl GUIViewTrait for WindowConfiguration {
         ui.separator();
 
         match self.config_tab {
-            ConfigTab::Source => {
-                self.source_settings_view(ui);
-            },
-            ConfigTab::Appearance => {
-                self.appearance_settings_view(ui);
-            },
+            ConfigTab::Source => self.source_settings_view(ui),
+            ConfigTab::Appearance => self.appearance_settings_view(ui),
         }
 
         ui.allocate_space(ui.available_size());
@@ -573,7 +697,7 @@ impl WindowBattleInformationGroup {
 
     // キャラと順位の表示
     fn show_player_chara(&self, ui: &mut egui::Ui, data: &Box<dyn SmashbrosDataTrait>, player_id: i32) {
-        if let Some(chara_image) = GUI::get_chara_image(data.as_ref(), player_id, [32.0, 32.0]) {
+        if let Some(chara_image) = GUI::get_chara_image(data.as_ref().get_character(player_id), [32.0, 32.0]) {
             ui.add_sized( [32.0, 32.0], chara_image);
         } else {
             ui.add_sized( [32.0, 32.0], egui::Label::new(format!("{}p", player_id + 1)) );
@@ -600,7 +724,7 @@ impl WindowBattleInformationGroup {
         let stock = data.get_stock(player_id);
         for i in 0..3 {
             if (0 != stock) && (i < stock || 0 == i) {
-                if let Some(chara_image) = GUI::get_chara_image(data.as_ref(), player_id, [16.0, 16.0]) {
+                if let Some(chara_image) = GUI::get_chara_image(data.as_ref().get_character(player_id), [16.0, 16.0]) {
                     ui.add_sized( [16.0, 16.0], chara_image);
                 } else {
                     ui.add_sized( [16.0, 16.0], egui::Label::new("?"));
@@ -693,10 +817,10 @@ struct WindowWinsGraph {
     point_list: Vec<plot::Value>,
     last_power: i32,
     wins_lose: (i32, i32),
-    win_rate: f32,
+    win_rate: (f32, i32),
 }
 impl WindowWinsGraph {
-    fn set_data(&mut self, data: SmashbrosData, data_list: Vec<SmashbrosData>, wins_lose: (i32, i32), win_rate: f32) {
+    fn set_data(&mut self, data: SmashbrosData, data_list: Vec<SmashbrosData>, wins_lose: (i32, i32), win_rate: (f32, i32)) {
         let mut data_list = data_list;
         data_list.reverse();
         self.point_list = data_list.iter().enumerate().filter_map(|(x, data)| {
@@ -744,18 +868,18 @@ impl WindowWinsGraph {
                         }
 
                         // 対キャラクター勝率
-                        if let Some(image) = GUI::get_chara_image(now_data.as_ref(), 0, [16.0, 16.0]) {
+                        if let Some(image) = GUI::get_chara_image(now_data.as_ref().get_character(0), [16.0, 16.0]) {
                             ui.add_sized( [16.0, 16.0], image);
                         } else {
                             ui.add_sized( [16.0, 16.0], egui::Label::new("1p"));
                         }
                         ui.add_sized( [16.0, 16.0], egui::Label::new("vs"));
-                        if let Some(image) = GUI::get_chara_image(now_data.as_ref(), 1, [16.0, 16.0]) {
+                        if let Some(image) = GUI::get_chara_image(now_data.as_ref().get_character(1), [16.0, 16.0]) {
                             ui.add_sized( [16.0, 16.0], image);
                         } else {
                             ui.add_sized( [16.0, 16.0], egui::Label::new("2p"));
                         }
-                        ui.add_sized( [16.0, 16.0], egui::Label::new(format!("{:3.1}%", 100.0 * self.win_rate)));
+                        ui.add_sized( [16.0, 16.0], egui::Label::new(format!("{:3.1}% / {}", 100.0 * self.win_rate.0, self.win_rate.1)));
                         ui.end_row();
 
                     });

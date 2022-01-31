@@ -14,6 +14,10 @@ window          = window
 video_device    = video device
 desktop         = desktop
 
+# 戦歴タブに関する文字列
+tab_battle_history  = 10 result
+tab_character_table = chara table
+
 # 設定タブに関する文字列
 tab_source      = source
 tab_appearance  = appearance

@@ -641,7 +641,7 @@ impl SmashbrosData {
         SmashbrosDataField::PowerList{ 0: "power_list" }
     ];
     // キャラクター名が不明時の文字列
-    const CHARACTER_NAME_UNKNOWN: &'static str = "unknown";
+    pub const CHARACTER_NAME_UNKNOWN: &'static str = "unknown";
 
     // ストックの最低一致数ボーダー
     pub const DEFAULT_STOCK_MAX_BORDER: i32 = 2;
@@ -680,6 +680,7 @@ impl SmashbrosData {
             return false;
         }
 
+        // 前回のキャラと戦闘力を記憶, 検出できていなかったものは前(々N)回のものを引き継ぎする
         if self.player_count as usize == self.prev_chara_list.len() {
             let prev_chara_list = self.prev_chara_list.clone();
             let prev_power_list = self.prev_power_list.clone();
@@ -691,6 +692,11 @@ impl SmashbrosData {
                     self.prev_power_list[i] = self.power_list[i].get();
                 }
             }
+        }
+        if self.prev_chara_list.is_empty() && 1 < self.chara_list.len() {
+            // 初期値代入
+            self.prev_chara_list = self.chara_list.iter().map(|value| value.get().to_string() ).collect::<Vec<String>>();
+            self.prev_power_list = self.power_list.iter().map(|value| value.get() ).collect::<Vec<i32>>();
         }
 
         // 削除
@@ -1109,6 +1115,7 @@ mod tests {
         let mut data = SmashbrosData::default();
         data.initialize_battle(2);
         data.guess_character_name(0, "MARIO".to_string());
+        data.guess_character_name(1, "MARIO".to_string());
         data.set_id(Some("ObjectId(\"test_data_id\")".to_string()));
 
         // 世界戦闘力の推測, (2桁以下は無視)
@@ -1126,14 +1133,15 @@ mod tests {
 
         data.initialize_battle(2);
         data.guess_character_name(0, "MARIO".to_string());
+        data.guess_character_name(1, "MARIO".to_string());
 
         // 1/2 差分無視確認
         for _ in 0..ValueGuesser::<i32>::DEFAULT_MAX_BORDER {
-            data.guess_power(0, 5000);
+            data.guess_power(0, 4999);
         }
         data.guess_power(0, 15000);
 
-        assert_eq!(data.get_power(0), 11000);
+        assert_eq!(data.get_power(0), 15000);
         assert_eq!(data.is_decided_power(0), false);
     }
 }

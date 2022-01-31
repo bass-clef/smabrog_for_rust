@@ -14,6 +14,10 @@ window          = ウィンドウ
 video_device    = ビデオデバイス
 desktop         = デスクトップ
 
+# 戦歴タブに関する文字列
+tab_battle_history  = 10戦の履歴
+tab_character_table = 対キャラ表
+
 # 設定タブに関する文字列
 tab_source      = ソース
 tab_appearance  = 外観
