@@ -113,13 +113,18 @@ pub mod utils {
         let size = image.channels() * image.cols() * image.rows();
         let data: &[u8] = unsafe{ std::slice::from_raw_parts(image.datastart(), size as usize) };
 
-        let tess = Tesseract::new(None, Some("eng")).unwrap()
-            .set_page_seg_mode(tesseract_sys::TessPageSegMode_PSM_SINGLE_BLOCK)
-            .set_frame(data, image.cols(), image.rows(),
-                image.channels(), image.channels() * image.cols()).unwrap()
-            .set_source_resolution(70);
-        
-        tess
+        match Tesseract::new(None, Some("eng")) {
+            Ok(tess) => {
+                tess.set_page_seg_mode(tesseract_sys::TessPageSegMode_PSM_SINGLE_BLOCK)
+                    .set_frame(data, image.cols(), image.rows(),
+                        image.channels(), image.channels() * image.cols()).unwrap()
+                    .set_source_resolution(70)
+            },
+            Err(err) => {
+                log::error!("{}", err);
+                panic!("{}\nFailed use tesseract. please reinstall smabrog.", err);
+            },
+        }
     }
     /// OCR(大文字アルファベットのみを検出)
     pub async fn run_ocr_with_upper_alpha(image: &core::Mat) -> Result<String, tesseract::TesseractError> {

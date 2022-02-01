@@ -1,6 +1,5 @@
 
 use linked_hash_map::LinkedHashMap;
-use std::collections::HashMap;
 
 
 use crate::capture::*;
@@ -74,7 +73,7 @@ impl SmashBrogEngine {
             }
         }
 
-        log::info!("now updated.");
+        log::info!("now updated. {}, {}, {}", self.data_latest_10.len(), self.data_latest_by_chara.len(), self.data_all_by_chara.len());
         self.prev_find_chara_list = prev_find_chara_list;
 
         true

@@ -50,6 +50,7 @@ enum GUIIdList {
 
     BattleInformationGrid,
     PowerPlot,
+    CharacterPlot,
 }
 
 // GUI の子ウィンドウが持つ
@@ -114,7 +115,7 @@ impl GUI {
         let mut fonts = egui::FontDefinitions::default();
         fonts.font_data.insert(
             "Mamelon".to_string(),
-            std::borrow::Cow::Borrowed(include_bytes!("../fonts/Mamelon-5-Hi-Regular.otf"))
+            egui::FontData::from_static(include_bytes!("../fonts/Mamelon-5-Hi-Regular.otf"))
         );
         fonts.fonts_for_family
             .get_mut(&egui::FontFamily::Proportional)
@@ -134,13 +135,13 @@ impl GUI {
         }
 
         // 対戦中情報
-        self.window_battle_information.battle_information.set_data(Box::new( self.engine.get_now_data() ));
+        self.window_battle_information.battle_information.set_data( self.engine.get_now_data() );
 
         // 戦歴
         self.window_battle_history.battle_information_list.clear();
         for data in self.engine.get_data_latest_10() {
             let mut battle_information = WindowBattleInformationGroup::default();
-            battle_information.set_data( Box::new(data) );
+            battle_information.set_data(data);
 
             self.window_battle_history.battle_information_list.push(battle_information);
         }
@@ -220,7 +221,7 @@ impl GUI {
 impl epi::App for GUI {
     fn name(&self) -> &str { "smabrog" }
 
-    fn setup(&mut self, ctx: &egui::CtxRef, frame: &mut epi::Frame<'_>, _storage: Option<&dyn epi::Storage>) {
+    fn setup(&mut self, ctx: &egui::CtxRef, frame: &epi::Frame, _storage: Option<&dyn epi::Storage>) {
         smashbros_resource().init(Some(frame));
         gui_config().get().load_config(true).expect("Failed to load config");
         if let Some(lang) = gui_config().get().lang.as_ref() {
@@ -244,7 +245,7 @@ impl epi::App for GUI {
         let _ = gui_config().get().save_config(true);
     }
 
-    fn update(&mut self, ctx: &egui::CtxRef, frame: &mut epi::Frame<'_>) {
+    fn update(&mut self, ctx: &egui::CtxRef, frame: &epi::Frame) {
         /* 子ウィンドウを3つ作成する
          * [対戦中情報]
          *   .対戦情報グループ(リアルタイム更新)
@@ -365,7 +366,8 @@ impl WindowBattleHistory {
         let mut group_count = HashMap::new();
         for (chara_name, (wins_rate, battle_count)) in &self.all_battle_rate_list {
             let y = if *battle_count == 0 {
-                -10.0
+                // 試合数がないものは表示しない
+                continue;
             } else {
                 *wins_rate as f64 * 100.0 as f64
             };
@@ -390,73 +392,75 @@ impl WindowBattleHistory {
 
     // キャラ別のグラフ表示
     fn character_table_view(&mut self, ui: &mut egui::Ui) {
-
-        let mut character_table_plot = plot::Plot::new(GUIIdList::PowerPlot)
-            .width(ui.available_size().x - 5.0)
-            .height(ui.available_size().y - 5.0)
-            .legend(plot::Legend::default().text_style(egui::TextStyle::Small))
-            .show_axes([false, true])
-            .line(
-                plot::Line::new(
-                    plot::Values::from_values(vec![plot::Value::new(-2.5, 0.0), plot::Value::new(25.5, 0.0), plot::Value::new(47.5, 0.0)]),
-                ).color(egui::Color32::RED)
-                .fill(10.0)
-                .name("負け")
-            )
-            .line(
-                plot::Line::new(
-                    plot::Values::from_values(vec![plot::Value::new(-2.5, 10.0), plot::Value::new(25.5, 10.0), plot::Value::new(47.5, 10.0)]),
-                ).color(egui::Color32::LIGHT_RED)
-                .fill(40.0)
-                .name("不得手")
-            )
-            .line(
-                plot::Line::new(
-                    plot::Values::from_values(vec![plot::Value::new(-2.5, 40.0), plot::Value::new(25.5, 40.0), plot::Value::new(47.5, 40.0)]),
-                ).color(egui::Color32::YELLOW)
-                .fill(60.0)
-                .name("丁度")
-            )
-            .line(
-                plot::Line::new(
-                    plot::Values::from_values(vec![plot::Value::new(-2.5, 60.0), plot::Value::new(25.5, 60.0), plot::Value::new(47.5, 60.0)]),
-                ).color(egui::Color32::LIGHT_GREEN)
-                .fill(90.0)
-                .name("得意")
-            )
-            .line(
-                plot::Line::new(
-                    plot::Values::from_values(vec![plot::Value::new(-2.5, 90.0), plot::Value::new(25.5, 90.0), plot::Value::new(47.5, 90.0)]),
-                ).color(egui::Color32::LIGHT_BLUE)
-                .fill(100.0)
-                .name("勝ち")
-            );
-
-        for (chara_name, (wins_rate, battle_count)) in &self.all_battle_rate_list {
-            let chara_texture = match smashbros_resource().get().get_image_handle(chara_name.clone()) {
-                Some(chara_texture) => chara_texture,
-                None => return,
-            };
-
-            // 試合数がないものは負数の領域に表示する
-            character_table_plot = character_table_plot.image(
-                    plot::PlotImage::new(
-                        chara_texture,
-                        self.chara_plot_list[chara_name].clone(),
-                        egui::Vec2::new(Self::CHARA_IMAGE_ZOOM, Self::CHARA_IMAGE_ZOOM),
-                    ),
-                )
-                .text(plot::Text::new(
-                        plot::Value::new(self.chara_plot_list[chara_name].x, self.chara_plot_list[chara_name].y - Self::CHARA_IMAGE_ZOOM as f64 * 0.6),
-                        &format!("{:3.1}", wins_rate * 100.0)
-                    ).color(egui::Color32::WHITE)
-                );
-        };
-
+        let available_size = ui.available_size();
         GUI::new_grid(GUIIdList::AppearanceTab, 2, egui::Vec2::new(30.0, 5.0))
             .striped(true)
             .show(ui, |ui| {
-                ui.add(character_table_plot);
+                plot::Plot::new(GUIIdList::CharacterPlot)
+                    .width(available_size.x - 5.0)
+                    .height(available_size.y - 5.0)
+                    .legend(plot::Legend::default().text_style(egui::TextStyle::Small))
+                    .show_axes([false, true])
+                    .show(ui, |ui| {
+                        ui.line(
+                            plot::Line::new(
+                                plot::Values::from_values(vec![plot::Value::new(-2.5, 0.0), plot::Value::new(25.5, 0.0), plot::Value::new(47.5, 0.0)]),
+                            ).color(egui::Color32::RED)
+                            .fill(10.0)
+                            .name("負け")
+                        );
+                        ui.line(
+                            plot::Line::new(
+                                plot::Values::from_values(vec![plot::Value::new(-2.5, 10.0), plot::Value::new(25.5, 10.0), plot::Value::new(47.5, 10.0)]),
+                            ).color(egui::Color32::LIGHT_RED)
+                            .fill(40.0)
+                            .name("不得手")
+                        );
+                        ui.line(
+                            plot::Line::new(
+                                plot::Values::from_values(vec![plot::Value::new(-2.5, 40.0), plot::Value::new(25.5, 40.0), plot::Value::new(47.5, 40.0)]),
+                            ).color(egui::Color32::YELLOW)
+                            .fill(60.0)
+                            .name("丁度")
+                        );
+                        ui.line(
+                            plot::Line::new(
+                                plot::Values::from_values(vec![plot::Value::new(-2.5, 60.0), plot::Value::new(25.5, 60.0), plot::Value::new(47.5, 60.0)]),
+                            ).color(egui::Color32::LIGHT_GREEN)
+                            .fill(90.0)
+                            .name("得意")
+                        );
+                        ui.line(
+                            plot::Line::new(
+                                plot::Values::from_values(vec![plot::Value::new(-2.5, 90.0), plot::Value::new(25.5, 90.0), plot::Value::new(47.5, 90.0)]),
+                            ).color(egui::Color32::LIGHT_BLUE)
+                            .fill(100.0)
+                            .name("勝ち")
+                        );
+        
+                        for (chara_name, (wins_rate, _battle_count)) in &self.all_battle_rate_list {
+                            if !self.chara_plot_list.contains_key(chara_name) {
+                                continue;
+                            }
+                            let chara_texture = match smashbros_resource().get().get_image_handle(chara_name.clone()) {
+                                Some(chara_texture) => chara_texture,
+                                None => return,
+                            };
+        
+                            ui.image(
+                                plot::PlotImage::new(
+                                    chara_texture,
+                                    self.chara_plot_list[chara_name].clone(),
+                                    egui::Vec2::new(Self::CHARA_IMAGE_ZOOM, Self::CHARA_IMAGE_ZOOM),
+                                ),
+                            );
+                            ui.text(plot::Text::new(
+                                    plot::Value::new(self.chara_plot_list[chara_name].x, self.chara_plot_list[chara_name].y - Self::CHARA_IMAGE_ZOOM as f64 * 0.6),
+                                    &format!("{:3.1}", wins_rate * 100.0)
+                                ).color(egui::Color32::WHITE)
+                            );
+                        };
+                    });
             });
     }
 }
@@ -687,44 +691,68 @@ impl GUIViewTrait for WindowConfiguration {
 // 対戦情報グループ
 #[derive(Default)]
 struct WindowBattleInformationGroup {
-    data: Option<Box<dyn SmashbrosDataTrait>>,
+    data: Option<SmashbrosData>,
 }
 impl WindowBattleInformationGroup {
     // BattleInformationGroup を表示するのに必要なデータを設定する
-    fn set_data(&mut self, data: Box<dyn SmashbrosDataTrait>) {
+    fn set_data(&mut self, data: SmashbrosData) {
         self.data = Some(data);
     }
 
     // キャラと順位の表示
-    fn show_player_chara(&self, ui: &mut egui::Ui, data: &Box<dyn SmashbrosDataTrait>, player_id: i32) {
+    fn show_player_chara(ui: &mut egui::Ui, data: &mut SmashbrosData, player_id: i32) {
+        let button = if let Some(order_texture) = smashbros_resource().get().get_order_handle(data.get_order(player_id)) {
+            let size = smashbros_resource().get().get_image_size(order_texture).unwrap();
+            egui::Button::image_and_text(order_texture, size * egui::Vec2::new(0.25, 0.25), "")
+        } else {
+            egui::Button::new("?")
+        };
+
         if let Some(chara_image) = GUI::get_chara_image(data.as_ref().get_character(player_id), [32.0, 32.0]) {
             ui.add_sized( [32.0, 32.0], chara_image);
         } else {
             ui.add_sized( [32.0, 32.0], egui::Label::new(format!("{}p", player_id + 1)) );
         }
-
         egui::Grid::new(GUIIdList::BattleInformationGrid)
             .num_columns(2)
             .spacing(egui::Vec2::new(0.0, 0.0))
-            .min_col_width(0.0)
-            .min_row_height(16.0)
+            .min_col_width(16.0)
+            .min_row_height(8.0)
             .show(ui, |ui| {
                 ui.end_row();
-                if let Some(order_texture) = smashbros_resource().get().get_order_handle(data.get_order(player_id)) {
-                    let size = smashbros_resource().get().get_image_size(order_texture).unwrap();
-                    ui.add_sized( [10.0, 16.0], egui::Image::new(order_texture, size * egui::Vec2::new(0.25, 0.25)) );
-                } else {
-                    ui.add_sized( [10.0, 16.0], egui::Label::new("?") );
+
+                if ui.add_sized( [20.0, 20.0], button ).clicked() {
+                    if !data.is_finished_battle() {
+                        return;
+                    }
+
+                    // 順位の変更
+                    if data.all_decided_order() {
+                        // どちらの順位も確定している場合は交換
+                        if data.get_order(0) == 1 {
+                            data.set_order(0, 2);
+                            data.set_order(1, 1);
+                        } else {
+                            data.set_order(0, 1);
+                            data.set_order(1, 2);
+                        }
+                    } else {
+                        // どちらかの順位がわからない場合は固定 [1p -> 1, 2p -> 2]
+                        data.set_order(0, 1);
+                        data.set_order(1, 2);
+                    }
+
+                    data.update_battle();
                 }
             });
     }
 
     // ストックの表示 (3 ストック以下ならアイコン表示、それ以上ならアイコンと数値を表示)
-    fn show_player_stock(&self, ui: &mut egui::Ui, data: &Box<dyn SmashbrosDataTrait>, player_id: i32) {
+    fn show_player_stock(ui: &mut egui::Ui, data: &mut SmashbrosData, player_id: i32) {
         let stock = data.get_stock(player_id);
         for i in 0..3 {
             if (0 != stock) && (i < stock || 0 == i) {
-                if let Some(chara_image) = GUI::get_chara_image(data.as_ref().get_character(player_id), [16.0, 16.0]) {
+                if let Some(chara_image) = GUI::get_chara_image(data.get_character(player_id), [16.0, 16.0]) {
                     ui.add_sized( [16.0, 16.0], chara_image);
                 } else {
                     ui.add_sized( [16.0, 16.0], egui::Label::new("?"));
@@ -739,14 +767,14 @@ impl WindowBattleInformationGroup {
         }
     }
 
-    fn show_ui(&self, ui: &mut egui::Ui) {
+    fn show_ui(&mut self, ui: &mut egui::Ui) {
         /*
          * [対戦情報グループ]
          * .1pキャラアイコン vs 2pキャラアイコン
          * .ルール(アイコンにしたい), 時間
          * .ストック(アイコンにしたい)
          */
-        let data = match self.data.as_ref() {
+        let data = match self.data.as_mut() {
             Some(data) => {
                 if data.get_player_count() == 4 {
                     // 4 人は未対応
@@ -767,9 +795,9 @@ impl WindowBattleInformationGroup {
                 // [ham vs spam] の表示
                 GUI::new_grid("character_icons", 3, egui::Vec2::new(5.0, 0.0))
                     .show(ui, |ui| {
-                        self.show_player_chara(ui, data, 0);
+                        Self::show_player_chara(ui, data, 0);
                         ui.add_sized( [16.0, 16.0], egui::Label::new("vs") );
-                        self.show_player_chara(ui, data, 1);
+                        Self::show_player_chara(ui, data, 1);
                         ui.end_row();
                     });
 
@@ -800,9 +828,9 @@ impl WindowBattleInformationGroup {
                 // ストックの表示
                 GUI::new_grid("stocks_icons", 3, egui::Vec2::new(0.0, 0.0))
                     .show(ui, |ui| {
-                        self.show_player_stock(ui, data, 0);
+                        Self::show_player_stock(ui, data, 0);
                         ui.end_row();
-                        self.show_player_stock(ui, data, 1);
+                        Self::show_player_stock(ui, data, 1);
                     });
 
                 ui.end_row();
@@ -832,7 +860,12 @@ impl WindowWinsGraph {
         }).collect::<Vec<plot::Value>>();
 
         self.now_data = Some(data);
-        self.last_power = data_list.last().unwrap().get_power(0);
+        let last = match data_list.last() {
+            Some(last) => last,
+            None => return,
+        };
+
+        self.last_power = last.get_power(0);
         self.wins_lose = wins_lose;
         self.win_rate = win_rate;
     }
@@ -840,19 +873,6 @@ impl WindowWinsGraph {
     fn show_ui(&self, ui: &mut egui::Ui) {
         let points_values = plot::Values::from_values(self.point_list.clone());
         let line_values = plot::Values::from_values(self.point_list.clone());
-        let gcp_plot = plot::Plot::new(GUIIdList::PowerPlot)
-            .width(GUI::get_initial_window_size().x / 2.0)
-            .height(40.0)
-            .legend(plot::Legend::default())
-            .view_aspect(1.0)
-            .show_axes([false, false])
-            .line(plot::Line::new(line_values).color(egui::Color32::WHITE))
-            .points(
-                plot::Points::new(points_values).radius(2.0)
-                    // Light モードのときだけ点を白にすることで、GSP だけをクリッピングして表示しやすいようにする
-                    .color(if ui.ctx().style().visuals == Visuals::dark() { egui::Color32::RED } else { egui::Color32::WHITE })
-                    .name(format!("{}\n{}", fl!(lang_loader().get(), "GSP"), self.last_power))
-            );
 
         GUI::new_grid("wins_graph_group", 2, egui::Vec2::new(0.0, 0.0))
             .min_col_width(120.0)
@@ -881,10 +901,24 @@ impl WindowWinsGraph {
                         }
                         ui.add_sized( [16.0, 16.0], egui::Label::new(format!("{:3.1}% / {}", 100.0 * self.win_rate.0, self.win_rate.1)));
                         ui.end_row();
-
                     });
                 
-                ui.add(gcp_plot);
+                // 世界戦闘力グラフの表示
+                plot::Plot::new(GUIIdList::PowerPlot)
+                    .width(GUI::get_initial_window_size().x / 2.0)
+                    .height(40.0)
+                    .legend(plot::Legend::default())
+                    .view_aspect(1.0)
+                    .show_axes([false, false])
+                    .show(ui, |ui| {
+                        ui.line(plot::Line::new(line_values).color(egui::Color32::WHITE));
+                        ui.points(
+                            plot::Points::new(points_values).radius(2.0)
+                                // Light モードのときだけ点を白にすることで、GSP だけをクリッピングして表示しやすいようにする
+                                .color(if ui.ctx().style().visuals == Visuals::dark() { egui::Color32::RED } else { egui::Color32::WHITE })
+                                .name(format!("{}\n{}", fl!(lang_loader().get(), "GSP"), self.last_power))
+                        );
+                    });
             });
     }
 }

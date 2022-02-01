@@ -20,7 +20,7 @@ pub struct SmashbrosResource {
     pub i18n_convert_list: HashMap<String, String>,
 }
 impl SmashbrosResource {
-    pub fn new(frame: &mut eframe::epi::Frame<'_>) -> Self {
+    pub fn new(frame: &eframe::epi::Frame) -> Self {
         let text = SmashbrosResourceText::new();
         let mut image_size_list = HashMap::new();
         let mut icon_list: HashMap<String, TextureId> = HashMap::new();
@@ -65,22 +65,20 @@ impl SmashbrosResource {
         }
     }
 
-    fn get_texture_id(path: &str, frame: &mut eframe::epi::Frame<'_>) -> (TextureId, eframe::egui::Vec2) {
+    fn get_texture_id(path: &str, frame: &eframe::epi::Frame) -> (TextureId, eframe::egui::Vec2) {
         let image = opencv::imgcodecs::imread(path, opencv::imgcodecs::IMREAD_UNCHANGED).unwrap();
-        let image_size = ( image.cols() * image.rows() * 4 ) as usize;
-        let image_data_by_slice: &[u8] = unsafe{ std::slice::from_raw_parts(image.datastart(), image_size) };
-        let pixels: Vec<_> = image_data_by_slice.to_vec()
-            .chunks_exact(4)
-            .map(|p| eframe::egui::Color32::from_rgba_unmultiplied(p[2], p[1], p[0], p[3]))
-            .collect();
-
+        let mut converted_image = opencv::core::Mat::default();
+        opencv::imgproc::cvt_color(&image, &mut converted_image, opencv::imgproc::COLOR_BGRA2RGBA, 0).expect("failed cvt_color BGR to RGB. from get_texture_id");
+        
+        let image_size = ( converted_image.cols() * converted_image.rows() * 4 ) as usize;
+        let image_data_by_slice: &[u8] = unsafe{ std::slice::from_raw_parts(converted_image.datastart(), image_size) };
+        
         (
-            frame.tex_allocator()
-                .alloc_srgba_premultiplied(
-                    (image.cols() as usize, image.rows() as usize),
-                    &pixels
-                ),
-            eframe::egui::Vec2::new(image.cols() as f32, image.rows() as f32)
+            frame.alloc_texture(eframe::epi::Image::from_rgba_unmultiplied(
+                [converted_image.cols() as usize, converted_image.rows() as usize],
+                image_data_by_slice,
+            )),
+            eframe::egui::Vec2::new(converted_image.cols() as f32, converted_image.rows() as f32)
         )
     }
 
@@ -117,7 +115,7 @@ pub struct WrappedSmashbrosResource {
     smashbros_resource: Option<SmashbrosResource>
 }
 impl WrappedSmashbrosResource {
-    pub fn init(&mut self, frame: Option<&mut eframe::epi::Frame<'_>>) {
+    pub fn init(&mut self, frame: Option<&eframe::epi::Frame>) {
         if self.smashbros_resource.is_none() {
             self.smashbros_resource = Some(SmashbrosResource::new( frame.unwrap() ));
         }
@@ -139,6 +137,27 @@ pub fn smashbros_resource() -> &'static mut WrappedSmashbrosResource {
     unsafe { &mut SMASHBROS_RESOURCE }
 }
 
+// LanguageIdentifier の変換用
+fn deserialized_lang<'de, D>(deserializer: D) -> Result<Option<LanguageIdentifier>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let lang_str = String::deserialize(deserializer)?;
+    if lang_str.is_empty() {
+        return Ok(Some( LanguageIdentifier::from_bytes("ja-JP".as_bytes()).expect("lang parsing failed") ));
+    }
+    Ok(Some( LanguageIdentifier::from_bytes(lang_str.as_bytes()).unwrap() ))
+}
+fn serialize_lang<S>(lang: &Option<LanguageIdentifier>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    if let Some(lang) = lang {
+        serializer.serialize_str(lang.to_string().as_str())
+    } else {
+        serializer.serialize_str("ja-JP")
+    }
+}
 
 // 設定ファイル
 #[derive(Debug, Default, Deserialize, Serialize)]
@@ -151,7 +170,7 @@ pub struct GUIConfig {
     // バージョン更新でファイルに値が無い場合があるので、以下から default を追加する
     #[serde(default)]
     pub visuals: Option<eframe::egui::style::Visuals>,
-    #[serde(default)]
+    #[serde(deserialize_with = "deserialized_lang", serialize_with = "serialize_lang")]
     pub lang: Option<LanguageIdentifier>,
 }
 impl GUIConfig {

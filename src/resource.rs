@@ -7,7 +7,13 @@ use i18n_embed::{
     LanguageLoader,
     unic_langid::LanguageIdentifier,
 };
-use mongodb::*;
+use mongodb::{
+    *,
+    bson::{
+        self,
+        Document
+    },
+};
 use mongodb::options::{
     ClientOptions,
     FindOptions,
@@ -20,7 +26,6 @@ use serde::{
 use std::collections::HashMap;
 use std::io::BufReader;
 
-use crate::resource::bson::Document;
 use crate::data::SmashbrosData;
 
 
@@ -137,11 +142,10 @@ impl AsRef<BattleHistory> for BattleHistory {
 }
 impl BattleHistory {
     pub fn new() -> Self {
-        // MongoDBへの接続(の代わりに作成)とdatabaseの取得
+        // MongoDBへの接続
         let options = async_std::task::block_on(async move {
-            ClientOptions::parse("mongodb://localhost:27017/").await.unwrap()
+            ClientOptions::parse(r"mongodb://localhost:27017/").await.unwrap()
         });
-
         let client = Client::with_options(options).unwrap();
 
         Self {
@@ -177,13 +181,13 @@ impl BattleHistory {
         })
     }
     
-    // コレクションから検索して返す
+    /// コレクションから検索して返す
     pub fn find_data(&self, filter: Option<Document>, find_options: FindOptions) -> Option<Vec<SmashbrosData>> {
         let database = self.db_client.database("smabrog-db");
         let collection_ref = database.collection("battle_data_col").clone();
 
         // mongodb のポインタ的なものをもらう
-        let mut cursor: Cursor = match async_std::task::block_on(async {
+        let mut cursor = match async_std::task::block_on(async {
             let timeout = async_std::future::timeout(std::time::Duration::from_secs(5), 
                 collection_ref.find(filter, find_options)
             ).await;
@@ -230,12 +234,51 @@ impl BattleHistory {
         }        
     }
 
+    /// コレクションへの戦歴情報を更新
+    pub fn update_data(&mut self, data: &SmashbrosData) -> Option<String> {
+        use mongodb::options::UpdateModifications;
+        use mongodb::bson::doc;
+        use crate::data::SmashbrosDataTrait;
+        let id = match data.get_id() {
+            Some(id) => id,
+            None => {
+                log::error!("[err] failed update_data. id is None.");
+                return None;
+            },
+        };
+
+        let database = self.db_client.database("smabrog-db");
+        let collection_ref = database.collection::<Document>("battle_data_col").clone();
+        let serialized_data = bson::to_bson(data).unwrap();
+        let data_document = serialized_data.as_document().unwrap();
+
+        match Self::do_query_with_timeout(
+            collection_ref.update_one(
+                doc!{ "_id": mongodb::bson::oid::ObjectId::parse_str(&id).unwrap() },
+                UpdateModifications::Document(doc! { "$set": data_document.to_owned() }),
+                None
+            )
+        ) {
+            // 何故か ObjectId が再帰的に格納されている
+            Some(result) => {
+                if 1 == result.modified_count {
+                    return Some(id);
+                }
+                log::error!("[err] failed update data. {:?}", result);
+            },
+            None => log::error!("[err] failed update data. {:?}", data),
+        }        
+
+        return None;
+    }
+
     /// battle_data コレクションから戦歴情報を 直近10件 取得
     pub fn find_data_limit_10(&self) -> Option<Vec<SmashbrosData>> {
         self.find_data(
             None,
             FindOptions::builder()
-                .sort(crate::resource::bson::doc! { "_id": -1 })
+                .no_cursor_timeout(Some(false))
+                .sort(mongodb::bson::doc! { "_id": -1 })
                 .limit(10)
                 .build()
         )
@@ -243,7 +286,7 @@ impl BattleHistory {
 
     /// 特定のキャラクターの戦歴を直近 limit 件取得
     pub fn find_data_by_chara_list(&self, character_list: Vec<String>, limit: i64, use_in: bool) -> Option<Vec<SmashbrosData>> {
-        use crate::resource::bson::doc;
+        use mongodb::bson::doc;
         let filter = if use_in {
             doc! { "chara_list": {"$in": character_list } }
         } else {

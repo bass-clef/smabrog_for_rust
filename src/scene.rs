@@ -523,9 +523,9 @@ impl SceneTrait for MatchingScene {
         if self.scene_judgment.is_near_match() || self.scene_judgment_with4.is_near_match() {
             if let Some(smashbros_data) = smashbros_data {
                 if self.scene_judgment.is_near_match() {
-                    smashbros_data.initialize_battle(2);
+                    smashbros_data.initialize_battle(2, true);
                 } else if self.scene_judgment_with4.is_near_match() {
-                    smashbros_data.initialize_battle(4);
+                    smashbros_data.initialize_battle(4, true);
                 }
             }
         }
