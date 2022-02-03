@@ -568,12 +568,13 @@ impl SceneTrait for HamVsSpamScene {
     fn continue_match(&self, now_scene: SceneList) -> bool {
         match now_scene {
             SceneList::Matching => true,
+            // SceneList::ReadyToFight | SceneList::GameEnd | SceneList::Result => true,
             _ => false,
         }
     }
 
     fn is_scene(&mut self, capture_image: &core::Mat, smashbros_data: Option<&mut SmashbrosData>) -> opencv::Result<bool> {
-        if let Some(smashbros_data) = smashbros_data {
+        if let Some(smashbros_data) = smashbros_data.as_ref() {
             if smashbros_data.all_decided_character_name() {
                 // すべてのプレイヤーが確定している場合は判定すら行わない (matchTemaplte は処理コストが高い)
                 return Ok(false);
@@ -586,6 +587,9 @@ impl SceneTrait for HamVsSpamScene {
 
         if self.vs_scene_judgment.is_near_match() {
             imgcodecs::imwrite("ham_vs_spam.png", capture_image, &core::Vector::from(vec![]))?;
+            // if let Some(smashbros_data) = smashbros_data {
+            //     smashbros_data.initialize_battle(2, true);
+            // }
             self.buffer.start_recoding_by_time(std::time::Duration::from_secs(3));
             self.buffer.recoding_frame(capture_image)?;
         }
@@ -1268,6 +1272,8 @@ pub struct SceneManager {
     pub now_scene: SceneList,
     pub smashbros_data: SmashbrosData,
     pub dummy_local_time: chrono::DateTime<chrono::Local>,
+    pub prev_match_ratio: f64,
+    pub prev_match_scene: SceneList,
 }
 impl Default for SceneManager {
     fn default() -> Self {
@@ -1287,6 +1293,8 @@ impl Default for SceneManager {
             now_scene: SceneList::default(),
             smashbros_data: SmashbrosData::default(),
             dummy_local_time: chrono::Local::now(),
+            prev_match_ratio: 0.0,
+            prev_match_scene: SceneList::default(),
         }
     }
 }
@@ -1305,17 +1313,25 @@ impl SceneManager {
         self.now_scene.clone()
     }
 
+    // 次に検出予定のシーン
+    pub fn get_next_scene(&self) -> SceneList {
+        self.prev_match_scene.clone()
+    }
+
     // 現在検出しようとしているシーンの、前回の検出率を返す
-    pub fn get_prev_match_ratio(&self) -> f64 {
+    pub fn get_prev_match_ratio(&mut self) -> f64 {
         for index in 0..self.scene_list.len() {
             if self.scene_list[index].continue_match(self.now_scene) {
                 if let Some(scene_judgment) = self.scene_list[index].get_prev_match() {
-                    return scene_judgment.prev_match_ratio;
+                    if self.prev_match_ratio < scene_judgment.prev_match_ratio {
+                        self.prev_match_ratio = scene_judgment.prev_match_ratio;
+                        self.prev_match_scene = self.now_scene.clone();
+                    }
                 }
             }
         }
 
-        0.0
+        self.prev_match_ratio
     }
 
     // シーンを更新する
@@ -1336,6 +1352,7 @@ impl SceneManager {
         // 遷移?
         if self.scene_list[index].is_scene(&capture_image, Some(&mut self.smashbros_data)).unwrap_or(false) {
             let to_scene = self.scene_list[index].to_scene(self.now_scene);
+            self.prev_match_ratio = 0.0;
 
             // ReadyToFightの 直前のシーンが GameEnd なら SmashbrosData を保存する
             if self.now_scene == SceneList::GameEnd && to_scene == SceneList::ReadyToFight {
@@ -1349,7 +1366,6 @@ impl SceneManager {
             );
             self.now_scene = to_scene;
         }
-
     }
 
     // 全てのシーンを更新する

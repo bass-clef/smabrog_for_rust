@@ -819,7 +819,6 @@ impl SmashbrosData {
 
         self.saved_time = Some(std::time::Instant::now());
     }
-
     /// 試合情報の更新
     pub fn update_battle(&mut self) {
         log::info!("update_battle: {:?}", self.get_id());
@@ -842,6 +841,14 @@ impl SmashbrosData {
 
         // chara_list を元に戻す
         self.chara_list = back_chara_list;
+    }
+    /// 有効試合かどうか
+    pub fn is_valid_battle(&self) -> bool {
+        if !self.is_finished_battle() {
+            return false;
+        }
+
+        true
     }
 
     /// 制限時間の推測
@@ -916,25 +923,10 @@ impl SmashbrosData {
             return;
         }
         
-        if smashbros_resource().get().character_list.contains_key(&maybe_character_name) {
-            // O(1)
-            self.set_character(player_number, maybe_character_name.clone());
-        } else {
-            // リソースから一番一致率が高い名前を設定する
-            let mut max_ratio = 0.0;
-            let mut matcher = SequenceMatcher::new("", "");
-            let mut chara_name = Self::CHARACTER_NAME_UNKNOWN;
-            for (character_name, _) in smashbros_resource().get().character_list.iter() {
-                matcher.set_seqs(character_name, &maybe_character_name);
-                if max_ratio < matcher.ratio() {
-                    max_ratio = matcher.ratio();
-                    chara_name = &character_name;
-                    if 1.0 <= max_ratio {
-                        break;
-                    }
-                }
-            }
-            if chara_name != Self::CHARACTER_NAME_UNKNOWN {
+        if let Some((chara_name, ratio)) = Self::convert_character_name(maybe_character_name.clone()) {
+            if 1.0 == ratio {
+                self.set_character(player_number, chara_name);
+            } else {
                 self.chara_list[player_number as usize].guess(&chara_name.to_string());
             }
         }
@@ -944,6 +936,53 @@ impl SmashbrosData {
     /// 全員分が使用しているキャラクターは確定しているか
     pub fn all_decided_character_name(&self) -> bool {
         (0..self.player_count).collect::<Vec<i32>>().iter().all( |&player_number| self.is_decided_character_name(player_number) )
+    }
+    /// キャラ名が一致したものを返す。そうでない場合は推測して推測率と返す
+    pub fn convert_character_name(maybe_character_name: String) -> Option<(String, f32)> {
+        if smashbros_resource().get().character_list.contains_key(&maybe_character_name) {
+            // 完全一致(公式英名)
+            return Some(( maybe_character_name.clone(), 1.0 ));
+        } else if let Some(chara_name) = smashbros_resource().get().character_list.iter().find(|&c| c.1 == &maybe_character_name) {
+            // 完全一致(公式名)
+            return Some(( chara_name.0.clone(), 1.0 ));
+        } else if let Some(chara_name) = smashbros_resource().get().i18n_convert_list.get(&maybe_character_name) {
+            // i18n(各言語名)
+            return Some(( chara_name.clone(), 1.0 ));
+        } else {
+            fn matcher(chara_list: &Vec<String>, maybe_character_name: &String) -> (String, f32) {
+                let mut max_ratio = 0.0;
+                let mut matcher = SequenceMatcher::new("", "");
+                let mut chara_name = SmashbrosData::CHARACTER_NAME_UNKNOWN;
+                for character_name in chara_list {
+                    matcher.set_seqs(character_name, maybe_character_name);
+                    if max_ratio < matcher.ratio() {
+                        max_ratio = matcher.ratio();
+                        chara_name = character_name;
+                        if 1.0 <= max_ratio {
+                            break;
+                        }
+                    }
+                }
+                return (chara_name.to_string(), max_ratio);
+            }
+            // 完全一致(公式英名)から一番一致率が高い名前を設定する
+            let chara_list = smashbros_resource().get().character_list.clone().into_keys().collect::<Vec<String>>();
+            let (chara_name, ratio) = matcher(&chara_list, &maybe_character_name);
+            if chara_name != Self::CHARACTER_NAME_UNKNOWN {
+                return Some(( chara_name, ratio ));
+            }
+
+            // 完全一致(公式名)から一番一致率が高い名前を設定する
+            let chara_list = smashbros_resource().get().character_list.clone().into_values().collect::<Vec<String>>();
+            let (chara_name, ratio) = matcher(&chara_list, &maybe_character_name);
+            if chara_name != Self::CHARACTER_NAME_UNKNOWN {
+                if let Some(( chara_name, _)) = smashbros_resource().get().character_list.iter().find(|&c| c.1 == &chara_name) {
+                    return Some(( chara_name.clone(), ratio ));
+                }
+            }
+        }
+
+        None
     }
 
     /// プレイヤーのストックの推測
@@ -1024,6 +1063,14 @@ impl SmashbrosData {
     pub fn all_decided_order(&self) -> bool {
         (0..self.player_count).collect::<Vec<i32>>().iter().all( |&player_number| self.is_decided_order(player_number) )
     }
+    /// 順位が有効かどうか
+    pub fn is_valid_order(&self) -> bool {
+        if self.get_player_count() != 2 || !self.all_decided_order() || -1 == self.get_order(0) || -1 == self.get_order(1) || self.get_order(0) == self.get_order(1) {
+            return false;
+        }
+
+        true
+    }
 
     /// プレイヤーの戦闘力の推測 (3桁以下は無視)
     pub fn guess_power(&mut self, player_number: i32, maybe_power: i32) {
@@ -1031,21 +1078,8 @@ impl SmashbrosData {
             return;
         }
 
-        // 同じキャラを使用していた場合のみ
-        // 前回の戦闘力と比較して、1/2 に差分が収まっていない場合の戦闘力は誤検出とみなす
-        // WARN:[逆VIP - VIP]間の差が大きい区間ではうまく検出できない可能性がある
-        if self.all_decided_character_name() && self.get_character(player_number) == self.prev_chara_list[player_number as usize] {
-            if self.prev_power_list.len() as i32 == self.player_count {
-                if self.prev_power_list[player_number as usize] != -1 {
-                    let prev_border = self.prev_power_list[player_number as usize] / 2;
-                    let diff_power = (self.prev_power_list[player_number as usize] - maybe_power).abs();
-                    println!("prev_border: {}, diff_power: {}, maybe_power: {}", prev_border, diff_power, maybe_power);
-                    if prev_border < diff_power {
-                        log::info!("power false detection? {}p: {}?", player_number+1, maybe_power);
-                        return;
-                    }
-                }
-            }
+        if !self.is_valid_power(player_number, maybe_power, Some(&self.prev_power_list), Some(&self.prev_chara_list), true).unwrap_or(true) {
+            return;
         }
 
         if self.power_list[player_number as usize].guess(&maybe_power) {
@@ -1056,10 +1090,64 @@ impl SmashbrosData {
     pub fn all_decided_power(&self) -> bool {
         (0..self.player_count).collect::<Vec<i32>>().iter().all( |&player_number| self.is_decided_power(player_number) )
     }
+    /// 戦闘力が有効かどうか
+    pub fn is_valid_power(&self, player_number: i32, maybe_power: i32, prev_power_list: Option<&Vec<i32>>, prev_chara_list: Option<&Vec<String>>, output_log: bool) -> Option<bool> {
+        if self.player_count != 2 {
+            return None;
+        }
+
+        // 同じキャラを使用していた場合のみ
+        if let (Some(prev_power_list), Some(prev_chara_list)) = (prev_power_list, prev_chara_list) {
+            if player_number < prev_chara_list.len() as i32 && self.is_decided_character_name(player_number) && self.get_character(player_number) == prev_chara_list[player_number as usize] {
+                if prev_power_list.len() as i32 == self.player_count && prev_power_list[player_number as usize] != -1 {
+                    // WARN:[逆VIP - VIP]間の差が大きい区間ではうまく検出できない可能性がある
+                    // 前回の戦闘力と比較して、1/2 に差分が収まっていない場合の戦闘力は誤検出とみなす
+                    let prev_border = prev_power_list[player_number as usize] / 2;
+                    let diff_power = (prev_power_list[player_number as usize] - maybe_power).abs();
+                    if prev_border < diff_power {
+                        if output_log {
+                            log::debug!("pfd with before own? {}p: {}?{} {} < {}", player_number+1, maybe_power, prev_power_list[player_number as usize], prev_border, diff_power);
+                        }
+                        return Some(false);
+                    }
+                }
+            }
+        }
+
+        let other_player_number = (player_number + (self.player_count - 1)) % self.player_count;
+        if self.is_decided_power(other_player_number) {
+            // 相手との戦闘力の差が大きい場合は誤検出とみなす
+            let power_border = maybe_power / 2;
+            let diff_power = (maybe_power - self.get_power(other_player_number)).abs();
+            if power_border < diff_power {
+                if output_log {
+                    log::debug!("pfd with {}p? {}p: {}?{} {} < {}", other_player_number+1, player_number+1, maybe_power, self.get_power(other_player_number), power_border, diff_power);
+                }
+                return Some(false);
+            }
+        }
+
+        Some(true)
+    }
 
     /// プレイヤーの結果は取得できているか
     pub fn all_decided_result(&self) -> bool {
         self.all_decided_power() && self.all_decided_order()
+    }
+
+    // 勝ちか負けかを返す。None の場合は無効試合
+    pub fn is_win(&self) -> Option<bool> {
+        if !self.is_valid_order() {
+            return None;
+        }
+
+        if self.get_order(0) < self.get_order(1) {
+            // win
+            Some(true)
+        } else {
+            // lose
+            Some(false)
+        }
     }
 }
 
@@ -1141,8 +1229,7 @@ mod tests {
     fn test_power() {
         let mut data = SmashbrosData::default();
         data.initialize_battle(2, true);
-        data.guess_character_name(0, "MARIO".to_string());
-        data.guess_character_name(1, "MARIO".to_string());
+        data.set_character(0, "MARIO".to_string());
         data.set_id(Some("ObjectId(\"test_data_id\")".to_string()));
 
         // 世界戦闘力の推測, (2桁以下は無視)
@@ -1159,8 +1246,7 @@ mod tests {
         assert_eq!(data.get_power(0), 100000);
 
         data.initialize_battle(2, true);
-        data.guess_character_name(0, "MARIO".to_string());
-        data.guess_character_name(1, "MARIO".to_string());
+        data.set_character(0, "MARIO".to_string());
 
         // 1/2 差分無視確認
         for _ in 0..ValueGuesser::<i32>::DEFAULT_MAX_BORDER {
@@ -1173,5 +1259,30 @@ mod tests {
 
         assert_eq!(data.get_power(0), 120000);
         assert_eq!(data.is_decided_power(0), false);
+
+        data.initialize_battle(2, true);
+        data.set_character(0, "MARIO".to_string());
+
+        // 相手との差分無視確認
+        for _ in 0..ValueGuesser::<i32>::DEFAULT_MAX_BORDER {
+            data.guess_power(1, 150000);
+        }
+        assert_eq!(data.is_decided_power(1), true);
+
+        for _ in 0..ValueGuesser::<i32>::DEFAULT_MAX_BORDER {
+            data.guess_power(0, 15000);
+        }
+        for _ in 0..ValueGuesser::<i32>::DEFAULT_MAX_BORDER {
+            data.guess_power(0, 1500000);
+        }
+        assert_eq!(data.get_power(0), -1);
+        assert_eq!(data.is_decided_power(0), false);
+
+        for _ in 0..ValueGuesser::<i32>::DEFAULT_MAX_BORDER {
+            data.guess_power(0, 120000);
+        }
+        assert_eq!(data.get_power(0), 120000);
+        assert_eq!(data.is_decided_power(0), true);
+
     }
 }

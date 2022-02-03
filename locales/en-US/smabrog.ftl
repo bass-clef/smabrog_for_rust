@@ -1,27 +1,34 @@
-# 状態に関する文字列
-unselected  = unselected
-status      = status
-empty       = empty
-next        = next
+# 適当な文字列
+unselected  = Unselected
+status      = Status
+empty       = Empty
+next        = Next
+search      = Search
+exact_match = Exact
+passage     = Passage
+wins        = Wins
+result_max  = Result Max
 
 # 戦闘に関する文字列
-battle_information  = battle information
-battle_history      = battle history
+battle_information  = Battle Information
+battle_history      = Battle History
 GSP                 = GSP
 
 # 検出に関する文字列
-window          = window
-video_device    = video device
-desktop         = desktop
+window          = Window
+video_device    = Video Device
+desktop         = Desktop
 
 # 戦歴タブに関する文字列
-tab_battle_history  = 10 result
-tab_character_table = chara table
+tab_battle_history      = Result
+tab_character_table     = Chara Table
+tab_character_history   = Chara History
 
 # 設定タブに関する文字列
-tab_source      = source
-tab_appearance  = appearance
+tab_source      = Source
+tab_appearance  = Appearance
+tab_detail      = Detail
 
 # 設定ラベルに関する文字列
-theme       = theme
-language    = language
+theme       = Theme
+language    = Language
