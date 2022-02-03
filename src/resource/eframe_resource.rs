@@ -172,6 +172,8 @@ pub struct GUIConfig {
     pub visuals: Option<eframe::egui::style::Visuals>,
     #[serde(deserialize_with = "deserialized_lang", serialize_with = "serialize_lang")]
     pub lang: Option<LanguageIdentifier>,
+    #[serde(default = "crate::engine::SmashBrogEngine::get_default_result_limit")]
+    pub result_max: i64,
 }
 impl GUIConfig {
     const DEFAULT_CAPTION: &'static str = "smabrog";

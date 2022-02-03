@@ -36,7 +36,7 @@ fn init_logger(){
  
     let stdout_config = fern::Dispatch::new()
         .level(log::LevelFilter::Error)
-        .level_for("smabrog", log::LevelFilter::Debug)
+        .level_for("smabrog", log::LevelFilter::Info)
         .format(|out, message, record| {
             out.finish(format_args!(
                 "{}[{}][{}] {}",

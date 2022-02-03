@@ -42,6 +42,7 @@ pub fn make_gui_run() -> anyhow::Result<()> {
 #[derive(std::hash::Hash)]
 enum GUIIdList {
     AppearanceTab,
+    DetailTab,
     SourceKind,
     LanguageKind,
 
@@ -49,6 +50,8 @@ enum GUIIdList {
     DeviceList,
 
     BattleInformationGrid,
+    BattleInformationChildGrid,
+    CharacterHistoryGrid,
     PowerPlot,
     CharacterPlot,
 }
@@ -139,21 +142,23 @@ impl GUI {
 
         // 戦歴
         self.window_battle_history.battle_information_list.clear();
-        for data in self.engine.get_data_latest_10() {
+        let data_latest = self.engine.get_data_latest(self.window_configuration.result_max);
+        for data in data_latest.clone() {
             let mut battle_information = WindowBattleInformationGroup::default();
             battle_information.set_data(data);
 
             self.window_battle_history.battle_information_list.push(battle_information);
         }
-        let data_list = self.engine.get_data_all_by_now_chara();
-        self.window_battle_history.set_data(self.engine.get_wins_by_data_list_groupby_character(data_list));
+        let all_data_list = self.engine.get_data_all_by_now_chara();
+        self.window_battle_history.set_data(SmashBrogEngine::get_wins_by_data_list_groupby_character(&all_data_list));
 
-        let data_list = self.engine.get_data_latest_by_now_chara();
+        let chara_data_list = self.engine.get_data_latest_by_now_chara();
         self.window_battle_information.wins_graph.set_data(
             self.engine.get_now_data(),
-            self.engine.get_data_latest_10(),
-            self.engine.get_win_lose_latest_10(),
-            self.engine.get_wins_by_data_list(data_list),
+            data_latest.clone(),
+            SmashBrogEngine::get_win_lose_by_data_list(&data_latest),
+            SmashBrogEngine::get_wins_by_data_list(&chara_data_list),
+            WinsGraphKind::Gsp
         );
 
         // 検出状態
@@ -228,14 +233,12 @@ impl epi::App for GUI {
             lang_loader().change(lang.clone());
         }
         self.update_language(true);
-        if let Some(visuals) = gui_config().get().visuals.as_ref() {
-            ctx.set_visuals(visuals.clone());
-        }
         self.set_fonts(ctx);
 
         self.window_battle_information.setup(ctx);
         self.window_battle_history.setup(ctx);
         self.window_configuration.setup(ctx);
+        self.engine.change_result_max(self.window_configuration.result_max);
 
         self.window_battle_information.battle_information = WindowBattleInformationGroup::default();
         self.update_battle_informations();
@@ -320,7 +323,7 @@ impl GUIViewTrait for WindowBattleInformation {
     fn ui(&mut self, ui: &mut egui::Ui) {
         self.battle_information.show_ui(ui);
         ui.separator();
-        self.wins_graph.show_ui(ui);
+        self.wins_graph.show_ui(ui, fl!(lang_loader().get(), "GSP"));
 
         ui.allocate_space(ui.available_size());
     }
@@ -331,6 +334,7 @@ impl GUIViewTrait for WindowBattleInformation {
 enum WindowBattleHistoryTab {
     BattleHistory,
     CharacterTable,
+    CharacterHistory,
 }
 impl Default for WindowBattleHistoryTab {
     fn default() -> Self { WindowBattleHistoryTab::BattleHistory }
@@ -343,6 +347,10 @@ struct WindowBattleHistory {
     pub all_battle_rate_list: LinkedHashMap<String, (f32, i32)>,  // キャラ別, (勝率と試合数)
     window_battle_history_tab: WindowBattleHistoryTab,
     chara_plot_list: HashMap<String, plot::Value>,
+    find_character_list: Vec<String>,
+    character_history_list: Vec<WindowBattleInformationGroup>,
+    character_history_graph: WindowWinsGraph,
+    is_exact_match: bool,
 }
 impl WindowBattleHistory {
     pub fn get_initial_window_size() -> egui::Vec2 {
@@ -382,7 +390,7 @@ impl WindowBattleHistory {
         }
     }
 
-    // 10戦の履歴表示
+    // N 戦の履歴表示
     fn battle_history_view(&mut self, ui: &mut egui::Ui) {
         for group in &mut self.battle_information_list {
             group.show_ui(ui);
@@ -463,8 +471,69 @@ impl WindowBattleHistory {
                     });
             });
     }
+
+    // 対キャラの戦歴表示
+    fn character_history_view(&mut self, ui: &mut egui::Ui) {
+        use crate::resource::battle_history;
+        let one_width = ui.available_size().x / 4.0;
+        GUI::new_grid(GUIIdList::CharacterHistoryGrid, 4, egui::Vec2::new(5.0, 0.0))
+            .show(ui, |ui| {
+                ui.checkbox( &mut self.is_exact_match, fl!(lang_loader().get(), "exact_match") );
+                ui.add_sized([one_width, 18.0], egui::TextEdit::singleline(&mut self.find_character_list[0]));
+                ui.add_sized([one_width, 18.0], egui::TextEdit::singleline(&mut self.find_character_list[1]));
+                if ui.button(fl!( lang_loader().get(), "search" )).clicked() {
+                    // キャラ名推測をする
+                    self.find_character_list = self.find_character_list.iter_mut().map(|chara_name| {
+                        if let Some((new_chara_name, _)) = SmashbrosData::convert_character_name(chara_name.to_uppercase()) {
+                            return new_chara_name;
+                        }
+
+                        chara_name.clone()
+                    }).collect();
+                    log::info!("search character history: {:?}", self.find_character_list);
+
+                    if let Some(data_list) = battle_history().get_mut().find_data_by_chara_list(self.find_character_list.clone(), 100, !self.is_exact_match) {
+                        self.character_history_list.clear();
+                        for data in data_list.clone() {
+                            let mut battle_information = WindowBattleInformationGroup::default();
+                            battle_information.set_data(data);
+                            self.character_history_list.push(battle_information);
+                        }
+
+                        if !data_list.is_empty() {
+                            self.character_history_graph.set_data(
+                                data_list[0].clone(),
+                                data_list.clone(),
+                                SmashBrogEngine::get_win_lose_by_data_list(&data_list),
+                                SmashBrogEngine::get_wins_by_data_list(&data_list),
+                                WinsGraphKind::Rate
+                            );
+                        }
+                    }
+                    if self.character_history_list.is_empty() {
+                        // 検索結果がなにもない場合は default の SmashbrosData を突っ込む
+                        let mut battle_information = WindowBattleInformationGroup::default();
+                        battle_information.set_data( SmashbrosData::default() );
+                        self.character_history_list.push(battle_information);
+                    }
+                }
+            });
+
+        ui.separator();
+        self.character_history_graph.show_ui( ui, fl!(lang_loader().get(), "passage") );
+        
+        ui.separator();
+        for group in &mut self.character_history_list {
+            group.show_ui(ui);
+            ui.separator();
+        }
+    }
 }
 impl GUIModelTrait for WindowBattleHistory {
+    fn setup(&mut self, _ctx: &egui::CtxRef) {
+        self.find_character_list = vec![String::new(); 2];
+        self.is_exact_match = true;
+    }
     fn name(&self) -> String { fl!(lang_loader().get(), "battle_history") }
     fn show(&mut self, ctx: &egui::CtxRef) {
         egui::Window::new(self.name())
@@ -476,14 +545,16 @@ impl GUIModelTrait for WindowBattleHistory {
 impl GUIViewTrait for WindowBattleHistory {
     fn ui(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.window_battle_history_tab, WindowBattleHistoryTab::BattleHistory, fl!(lang_loader().get(), "tab_battle_history"));
+            ui.selectable_value(&mut self.window_battle_history_tab, WindowBattleHistoryTab::BattleHistory, format!("{} {}", self.battle_information_list.len(), fl!(lang_loader().get(), "tab_battle_history")));
             ui.selectable_value(&mut self.window_battle_history_tab, WindowBattleHistoryTab::CharacterTable, fl!(lang_loader().get(), "tab_character_table"));
+            ui.selectable_value(&mut self.window_battle_history_tab, WindowBattleHistoryTab::CharacterHistory, fl!(lang_loader().get(), "tab_character_history"));
         });
         ui.separator();
 
         match self.window_battle_history_tab {
             WindowBattleHistoryTab::BattleHistory => self.battle_history_view(ui),
             WindowBattleHistoryTab::CharacterTable => self.character_table_view(ui),
+            WindowBattleHistoryTab::CharacterHistory => self.character_history_view(ui),
         }
 
         ui.allocate_space(ui.available_size());
@@ -495,11 +566,11 @@ impl GUIViewTrait for WindowBattleHistory {
 enum ConfigTab {
     Source,
     Appearance,
+    Detail,
 }
 impl Default for ConfigTab {
     fn default() -> Self { ConfigTab::Source }
 }
-
 // 設定
 #[derive(Default)]
 struct WindowConfiguration {
@@ -511,6 +582,7 @@ struct WindowConfiguration {
     window_caption_list: Vec<String>,
     pub now_scene: SceneList,
     pub prev_match_ratio: f64,
+    pub result_max: i64,
 }
 impl WindowConfiguration {
     // 初期のウィンドウサイズを返す
@@ -659,6 +731,26 @@ impl WindowConfiguration {
                 ui.end_row();
             });
     }
+
+    // 詳細の設定の view を返す
+    fn detail_settings_view(&mut self, ui: &mut egui::Ui) {
+        use eframe::egui::Widget;
+        GUI::new_grid(GUIIdList::DetailTab, 2, egui::Vec2::new(30.0, 5.0))
+            .striped(true)
+            .show(ui, |ui| {
+                // 結果を取得する限界数
+                ui.label(fl!(lang_loader().get(), "result_max"));
+                if egui::DragValue::new(&mut self.result_max)
+                    .clamp_range(1..=1000)
+                    .speed(0.5)
+                    .ui(ui).changed()
+                {
+                    gui_config().get().result_max = self.result_max;
+                }
+
+                ui.end_row();
+            });
+    }
 }
 impl GUIModelTrait for WindowConfiguration {
     fn name(&self) -> String { fl!(lang_loader().get(), "status") }
@@ -667,7 +759,11 @@ impl GUIModelTrait for WindowConfiguration {
             .default_rect(Self::get_initial_window_rect())
             .show(ctx, |ui| self.ui(ui));
     }
-    fn setup(&mut self, _ctx: &egui::CtxRef) {
+    fn setup(&mut self, ctx: &egui::CtxRef) {
+        if let Some(visuals) = gui_config().get().visuals.as_ref() {
+            ctx.set_visuals(visuals.clone());
+        }
+        self.result_max = gui_config().get().result_max;
         self.video_device_id = -1;
     }
 }
@@ -676,12 +772,14 @@ impl GUIViewTrait for WindowConfiguration {
         ui.horizontal(|ui| {
             ui.selectable_value(&mut self.config_tab, ConfigTab::Source, fl!(lang_loader().get(), "tab_source"));
             ui.selectable_value(&mut self.config_tab, ConfigTab::Appearance, fl!(lang_loader().get(), "tab_appearance"));
+            ui.selectable_value(&mut self.config_tab, ConfigTab::Detail, fl!(lang_loader().get(), "tab_detail"));
         });
         ui.separator();
 
         match self.config_tab {
             ConfigTab::Source => self.source_settings_view(ui),
             ConfigTab::Appearance => self.appearance_settings_view(ui),
+            ConfigTab::Detail => self.detail_settings_view(ui),
         }
 
         ui.allocate_space(ui.available_size());
@@ -713,7 +811,7 @@ impl WindowBattleInformationGroup {
         } else {
             ui.add_sized( [32.0, 32.0], egui::Label::new(format!("{}p", player_id + 1)) );
         }
-        egui::Grid::new(GUIIdList::BattleInformationGrid)
+        egui::Grid::new(GUIIdList::BattleInformationChildGrid)
             .num_columns(2)
             .spacing(egui::Vec2::new(0.0, 0.0))
             .min_col_width(16.0)
@@ -838,6 +936,16 @@ impl WindowBattleInformationGroup {
     }
 }
 
+#[derive(PartialEq)]
+enum WinsGraphKind {
+    Gsp,
+    Rate,
+}
+impl Default for WinsGraphKind {
+    fn default() -> Self {
+        WinsGraphKind::Gsp
+    }
+}
 // 勝率および戦闘力グループ
 #[derive(Default)]
 struct WindowWinsGraph {
@@ -846,38 +954,127 @@ struct WindowWinsGraph {
     last_power: i32,
     wins_lose: (i32, i32),
     win_rate: (f32, i32),
+    wins: i32,
+    kind: WinsGraphKind,
+    border_line_list: Vec<Vec::<plot::Value>>,
 }
 impl WindowWinsGraph {
-    fn set_data(&mut self, data: SmashbrosData, data_list: Vec<SmashbrosData>, wins_lose: (i32, i32), win_rate: (f32, i32)) {
-        let mut data_list = data_list;
-        data_list.reverse();
-        self.point_list = data_list.iter().enumerate().filter_map(|(x, data)| {
-            if data.get_power(0) < 0 {
-                return None;
-            }
-
-            Some(plot::Value::new(x as f64, data.get_power(0) as f64))
-        }).collect::<Vec<plot::Value>>();
-
+    fn set_data(&mut self, data: SmashbrosData, data_list: Vec<SmashbrosData>, wins_lose: (i32, i32), win_rate: (f32, i32), kind: WinsGraphKind) {
         self.now_data = Some(data);
-        let last = match data_list.last() {
-            Some(last) => last,
-            None => return,
-        };
-
-        self.last_power = last.get_power(0);
         self.wins_lose = wins_lose;
         self.win_rate = win_rate;
+        self.kind = kind;
+
+        let mut data_list = data_list;
+        data_list.reverse();
+        let last = match data_list.last() {
+            Some(last) => &last,
+            None => self.now_data.as_ref().unwrap(),
+        };
+        self.last_power = last.get_power(0);
+
+        // グラフにデータを追加
+        let mut battle_count = 0.0;
+        let mut rate = 0.0;
+        let mut upper_power = 0;
+        let mut prev_power_list = Vec::new();
+        let mut prev_chara_list = Vec::new();
+        self.wins = 0;
+        self.point_list = data_list.iter().enumerate().filter_map(|(x, data)| {
+            // 連勝記録
+            if let Some(is_win) = data.is_win() {
+                if is_win {
+                    self.wins += 1;
+                } else {
+                    self.wins = 0;
+                }
+            } else {
+                self.wins = 0;
+            }
+
+            // WinsGraphKind によってグラフの内容を変える
+            match self.kind {
+                WinsGraphKind::Gsp => {
+                    if let Some(is_valid_power) = data.is_valid_power(0, data.get_power(0), Some(&prev_power_list), Some(&prev_chara_list), false) {
+                        if !is_valid_power {
+                            return None;
+                        }
+                    } else {
+                        return None;
+                    }
+                    prev_power_list = vec![data.get_power(0), data.get_power(1)];
+                    prev_chara_list = vec![data.get_character(0), data.get_character(1)];
+
+                    if upper_power < data.get_power(0) {
+                        upper_power = data.get_power(0);
+                    }
+        
+                    battle_count = x as f64;
+                    Some(plot::Value::new(battle_count, data.get_power(0) as f64))
+                },
+                WinsGraphKind::Rate => {
+                    if let Some(is_win) = data.is_win() {
+                        if is_win {
+                            rate += 1.0;
+                        }
+                        battle_count += 1.0;
+                    } else {
+                        return None;
+                    }
+
+                    Some(plot::Value::new(battle_count, rate / battle_count * 100.0))
+                },
+            }
+        }).collect::<Vec<plot::Value>>();
+
+        // グラフへ基準点の作成
+        match self.kind {
+            WinsGraphKind::Gsp => {
+                // 100万の区切りの上下を表示
+                let upper_one_mil = upper_power / 1_000_000 + 1;
+                self.border_line_list = vec![
+                    vec![
+                        plot::Value::new(0.0, ((upper_one_mil - 2) * 1_000_000) as f64),
+                        plot::Value::new(battle_count, ((upper_one_mil - 2) * 1_000_000) as f64)
+                    ],
+                    vec![
+                        plot::Value::new(0.0, ((upper_one_mil - 1) * 1_000_000) as f64),
+                        plot::Value::new(battle_count, ((upper_one_mil - 1) * 1_000_000) as f64)
+                    ],
+                    vec![
+                        plot::Value::new(0.0, (upper_one_mil * 1_000_000) as f64),
+                        plot::Value::new(battle_count, (upper_one_mil * 1_000_000) as f64)
+                    ]
+                ];
+            },
+            WinsGraphKind::Rate => {
+                // 0%, 100%
+                self.border_line_list = vec![
+                    vec![
+                        plot::Value::new(0.0, 0.0),
+                        plot::Value::new(battle_count, 0.0),
+                    ],
+                    vec![
+                        plot::Value::new(0.0, 50.0),
+                        plot::Value::new(battle_count, 50.0),
+                    ],
+                    vec![
+                        plot::Value::new(0.0, 100.0),
+                        plot::Value::new(battle_count, 100.0),
+                    ]
+                ];
+            },
+        }
     }
 
-    fn show_ui(&self, ui: &mut egui::Ui) {
-        let points_values = plot::Values::from_values(self.point_list.clone());
-        let line_values = plot::Values::from_values(self.point_list.clone());
-
+    fn show_ui(&self, ui: &mut egui::Ui, plot_name: String) {
+        let available_size = ui.available_size();
         GUI::new_grid("wins_graph_group", 2, egui::Vec2::new(0.0, 0.0))
             .min_col_width(120.0)
             .show(ui, |ui| {
-                GUI::new_grid("wins_group", 6, egui::Vec2::new(0.0, 0.0))
+                GUI::new_grid("wins_group", 2, egui::Vec2::new(0.0, 0.0))
+                    .min_col_width(0.0)
+                    .max_col_width(available_size.x / 5.0)
                     .show(ui, |ui| {
                         let now_data = match &self.now_data {
                             Some(data) => data,
@@ -888,22 +1085,78 @@ impl WindowWinsGraph {
                         }
 
                         // 対キャラクター勝率
-                        if let Some(image) = GUI::get_chara_image(now_data.as_ref().get_character(0), [16.0, 16.0]) {
-                            ui.add_sized( [16.0, 16.0], image);
-                        } else {
-                            ui.add_sized( [16.0, 16.0], egui::Label::new("1p"));
+                        ui.scope(|ui| {
+                            if let Some(image) = GUI::get_chara_image(now_data.as_ref().get_character(0), [16.0, 16.0]) {
+                                ui.add(image);
+                            } else {
+                                ui.add(egui::Label::new("1p"));
+                            }
+                            ui.add(egui::Label::new("x"));
+                            if let Some(image) = GUI::get_chara_image(now_data.as_ref().get_character(1), [16.0, 16.0]) {
+                                ui.add(image);
+                            } else {
+                                ui.add(egui::Label::new("2p"));
+                            }
+                        });
+                        // 勝率表示
+                        ui.scope(|ui| {
+                            match self.kind {
+                                WinsGraphKind::Gsp => {
+                                    ui.add(egui::Label::new(
+                                        format!("{:3.1}%({})", 100.0 * self.win_rate.0, self.win_rate.1)
+                                    ));
+                                },
+                                WinsGraphKind::Rate => {
+                                    ui.add(egui::Separator::default().vertical());
+                                    ui.add(egui::Label::new(
+                                        format!("{:3.1}%", 100.0 * self.win_rate.0)
+                                    ));
+                                },
+                            }
+                        });
+                        ui.end_row();
+
+                        if self.kind == WinsGraphKind::Gsp {
+                            ui.separator();
+                            ui.separator();
+                            ui.end_row();
                         }
-                        ui.add_sized( [16.0, 16.0], egui::Label::new("vs"));
-                        if let Some(image) = GUI::get_chara_image(now_data.as_ref().get_character(1), [16.0, 16.0]) {
-                            ui.add_sized( [16.0, 16.0], image);
-                        } else {
-                            ui.add_sized( [16.0, 16.0], egui::Label::new("2p"));
-                        }
-                        ui.add_sized( [16.0, 16.0], egui::Label::new(format!("{:3.1}% / {}", 100.0 * self.win_rate.0, self.win_rate.1)));
+
+                        // 連勝表示
+                        ui.add(egui::Label::new(
+                            format!( "{} {}", self.wins, fl!(lang_loader().get(), "wins") )
+                        ));
+                        ui.scope(|ui| {
+                            match self.kind {
+                                WinsGraphKind::Gsp => {
+                                    // 勝敗数表示
+                                    ui.add(egui::Label::new(
+                                        format!( "o:{}/x:{}", self.wins_lose.0, self.wins_lose.1 )
+                                    ));
+                                },
+                                WinsGraphKind::Rate => {
+                                    // 試合数表示
+                                    ui.add(egui::Separator::default().vertical());
+                                    ui.add(egui::Label::new(
+                                        format!("({})", self.win_rate.1)
+                                    ));
+                                },
+                            }
+                        });
                         ui.end_row();
                     });
                 
                 // 世界戦闘力グラフの表示
+                let theme_color = if ui.ctx().style().visuals == Visuals::dark() {
+                    egui::Color32::RED
+                } else {
+                    egui::Color32::WHITE
+                };
+                let theme_gray_color = if ui.ctx().style().visuals == Visuals::dark() {
+                    egui::Color32::GRAY
+                } else {
+                    egui::Color32::WHITE
+                };
                 plot::Plot::new(GUIIdList::PowerPlot)
                     .width(GUI::get_initial_window_size().x / 2.0)
                     .height(40.0)
@@ -911,12 +1164,28 @@ impl WindowWinsGraph {
                     .view_aspect(1.0)
                     .show_axes([false, false])
                     .show(ui, |ui| {
-                        ui.line(plot::Line::new(line_values).color(egui::Color32::WHITE));
+                        ui.line(
+                            plot::Line::new(plot::Values::from_values( self.point_list.clone() ))
+                                .color(theme_color)
+                        );
+                        if !self.border_line_list.is_empty() {
+                            for (i, border_line_list) in self.border_line_list.iter().enumerate() {
+                                ui.line(
+                                    plot::Line::new(plot::Values::from_values(border_line_list.clone()))
+                                        .color(if i == 1 { theme_gray_color } else { egui::Color32::WHITE })
+                                        .style(plot::LineStyle::dashed_dense())
+                                );
+                            }
+                        }
                         ui.points(
-                            plot::Points::new(points_values).radius(2.0)
+                            plot::Points::new(plot::Values::from_values( self.point_list.clone() ))
+                                .radius(2.0)
                                 // Light モードのときだけ点を白にすることで、GSP だけをクリッピングして表示しやすいようにする
-                                .color(if ui.ctx().style().visuals == Visuals::dark() { egui::Color32::RED } else { egui::Color32::WHITE })
-                                .name(format!("{}\n{}", fl!(lang_loader().get(), "GSP"), self.last_power))
+                                .color(theme_color)
+                                .name(format!("{}\n{}", plot_name, match self.kind {
+                                    WinsGraphKind::Gsp => format!("{}", self.last_power),
+                                    WinsGraphKind::Rate => format!("o:{}/x:{}", self.wins_lose.0, self.wins_lose.1),
+                                }))
                         );
                     });
             });

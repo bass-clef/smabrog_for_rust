@@ -13,10 +13,11 @@ use mongodb::{
         self,
         Document
     },
-};
-use mongodb::options::{
-    ClientOptions,
-    FindOptions,
+    options::{
+        ClientOptions,
+        FindOptions,
+        UpdateModifications,
+    }
 };
 use rust_embed::RustEmbed;
 use serde::{
@@ -142,68 +143,37 @@ impl AsRef<BattleHistory> for BattleHistory {
 }
 impl BattleHistory {
     pub fn new() -> Self {
-        // MongoDBへの接続
-        let options = async_std::task::block_on(async move {
-            ClientOptions::parse(r"mongodb://localhost:27017/").await.unwrap()
-        });
-        let client = Client::with_options(options).unwrap();
-
         Self {
-            db_client: client,
+            db_client: Self::get_client(),
         }
     }
 
-    /// なにかのクエリを非同期でタイムアウト付きで実行する
-    pub fn do_query_with_timeout<F, T>(future: F) -> Option<T>
-    where
-        F: async_std::future::Future<Output = Result<T, mongodb::error::Error>>, 
-    {
-        async_std::task::block_on(async {
-            let timeout = async_std::future::timeout(std::time::Duration::from_secs(5), future).await;
+    // DB への接続のための Client を返す
+    fn get_client() -> Client {
+        let mut options = async_std::task::block_on(async move {
+            ClientOptions::parse(r"mongodb://localhost:27017/").await.unwrap()
+        });
+        options.retry_reads = Some(false);
 
-            match timeout {
-                Ok(result) => match result {
-                    Ok(result_object) => Some(result_object),
-                    Err(e) => {
-                        // mongodb::error
-                        log::error!("[db_err] {:?}", e);
-
-                        None
-                    },
-                },
-                Err(e) => {
-                    // async_std::timeout::error
-                    log::error!("[timeout] {:?}", e);
-
-                    None
-                }
-            }
-        })
+        Client::with_options(options).expect("Failed connecting to MongoDB")
     }
-    
+
     /// コレクションから検索して返す
-    pub fn find_data(&self, filter: Option<Document>, find_options: FindOptions) -> Option<Vec<SmashbrosData>> {
+    pub fn find_data(&mut self, filter: Option<Document>, find_options: FindOptions) -> Option<Vec<SmashbrosData>> {
         let database = self.db_client.database("smabrog-db");
         let collection_ref = database.collection("battle_data_col").clone();
 
         // mongodb のポインタ的なものをもらう
         let mut cursor = match async_std::task::block_on(async {
-            let timeout = async_std::future::timeout(std::time::Duration::from_secs(5), 
-                collection_ref.find(filter, find_options)
-            ).await;
-
-            match timeout {
-                Ok(cursor) => match cursor {
-                    Ok(cursor) => Ok(cursor),
-                    Err(e) => Err(anyhow::anyhow!( format!("{:?}", e) )),   // mongodb::error -> anyhow
-                },
-                Err(e) => Err(anyhow::anyhow!( format!("{:?}", e) ))    // async_std::timeout::error -> anyhow
-            }
+            async_std::future::timeout(
+                std::time::Duration::from_secs(5),
+                collection_ref.find(filter.clone(), find_options.clone())
+            ).await
         }) {
-            Ok(cursor) => cursor,
-            Err(e) => {
-                log::error!("[err] {:?}", e);
-                return None
+            Ok(cursor) => cursor.ok().unwrap(),
+            Err(_e) => {    // async_std::future::TimeoutError( _private: () )
+                log::error!("find timeout. please restart smabrog.");
+                return None;
             },
         };
 
@@ -225,67 +195,79 @@ impl BattleHistory {
         let serialized_data = bson::to_bson(data).unwrap();
         let data_document = serialized_data.as_document().unwrap();
 
-        match Self::do_query_with_timeout(
-            collection_ref.insert_one( data_document.to_owned(), None )
-        ) {
-            // 何故か ObjectId が再帰的に格納されている
-            Some(result) => Some(result.inserted_id.as_object_id().unwrap().to_hex()),
-            None => return None,
-        }        
+        // mongodb のポインタ的なものをもらう
+        let result = match async_std::task::block_on(async {
+            async_std::future::timeout(
+                std::time::Duration::from_secs(5),
+                collection_ref.insert_one(data_document.to_owned(), None)
+            ).await
+        }) {
+            Ok(result) => result.ok().unwrap(),
+            Err(_e) => {    // async_std::future::TimeoutError( _private: () )
+                log::error!("insert timeout. please restart smabrog.");
+                return None;
+            },
+        };
+        
+        // 何故か ObjectId が再帰的に格納されている
+        Some(result.inserted_id.as_object_id().unwrap().to_hex())
     }
 
     /// コレクションへの戦歴情報を更新
     pub fn update_data(&mut self, data: &SmashbrosData) -> Option<String> {
-        use mongodb::options::UpdateModifications;
         use mongodb::bson::doc;
         use crate::data::SmashbrosDataTrait;
         let id = match data.get_id() {
             Some(id) => id,
             None => {
-                log::error!("[err] failed update_data. id is None.");
+                log::error!("[update err] failed update_data. id is None.");
                 return None;
             },
         };
 
         let database = self.db_client.database("smabrog-db");
-        let collection_ref = database.collection::<Document>("battle_data_col").clone();
+        let collection_ref = database.collection("battle_data_col").clone();
         let serialized_data = bson::to_bson(data).unwrap();
         let data_document = serialized_data.as_document().unwrap();
 
-        match Self::do_query_with_timeout(
-            collection_ref.update_one(
-                doc!{ "_id": mongodb::bson::oid::ObjectId::parse_str(&id).unwrap() },
-                UpdateModifications::Document(doc! { "$set": data_document.to_owned() }),
-                None
-            )
-        ) {
-            // 何故か ObjectId が再帰的に格納されている
-            Some(result) => {
-                if 1 == result.modified_count {
+        match async_std::task::block_on(async {
+            async_std::future::timeout(
+                std::time::Duration::from_secs(5),
+                collection_ref.update_one(
+                    doc!{ "_id": mongodb::bson::oid::ObjectId::with_string(&id).unwrap() },
+                    UpdateModifications::Document(doc! { "$set": data_document.to_owned() }),
+                    None
+                )
+            ).await
+        }) {
+            Ok(result) => {
+                if 1 == result.as_ref().ok().unwrap().modified_count {
                     return Some(id);
                 }
-                log::error!("[err] failed update data. {:?}", result);
+                log::error!("[update err] failed update data {:?}.\ndata: [{:?}]", result, data);
             },
-            None => log::error!("[err] failed update data. {:?}", data),
-        }        
+            Err(_e) => {    // async_std::future::TimeoutError( _private: () )
+                log::error!("update timeout. please restart smabrog.");
+                return None;
+            },
+        }
 
         return None;
     }
 
-    /// battle_data コレクションから戦歴情報を 直近10件 取得
-    pub fn find_data_limit_10(&self) -> Option<Vec<SmashbrosData>> {
+    /// battle_data コレクションから戦歴情報を 直近 result_max 件 取得
+    pub fn find_data_limit(&mut self, result_max: i64) -> Option<Vec<SmashbrosData>> {
         self.find_data(
             None,
             FindOptions::builder()
-                .no_cursor_timeout(Some(false))
                 .sort(mongodb::bson::doc! { "_id": -1 })
-                .limit(10)
+                .limit(result_max)
                 .build()
         )
     }
 
     /// 特定のキャラクターの戦歴を直近 limit 件取得
-    pub fn find_data_by_chara_list(&self, character_list: Vec<String>, limit: i64, use_in: bool) -> Option<Vec<SmashbrosData>> {
+    pub fn find_data_by_chara_list(&mut self, character_list: Vec<String>, limit: i64, use_in: bool) -> Option<Vec<SmashbrosData>> {
         use mongodb::bson::doc;
         let filter = if use_in {
             doc! { "chara_list": {"$in": character_list } }
@@ -297,7 +279,7 @@ impl BattleHistory {
             Some(filter),
             FindOptions::builder()
                 .sort(doc! { "_id": -1 })
-                .limit(limit)    // 念の為とこれ以上とっても結果が変わらなそう
+                .limit(limit)
                 .build()
         )
     }
