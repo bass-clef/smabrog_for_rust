@@ -44,7 +44,8 @@ enum GUIIdList {
     AppearanceTab,
     DetailTab,
     SourceKind,
-    LanguageKind,
+    LanguageComboBox,
+    FontComboBox,
 
     WindowList,
     DeviceList,
@@ -114,25 +115,59 @@ impl GUI {
     pub fn get_title_bar_height() -> f32 { 32.0 }
 
     // フォントの設定
-    pub fn set_fonts(&self, ctx: &egui::CtxRef) {
+    pub fn set_font(ctx: &egui::CtxRef, font_family: Option<String>, font_size: i32) {
+        let font_datas = match font_family {
+            Some(font_family) => {
+                let family_handle = font_kit::source::SystemSource::new().select_family_by_name(&font_family).expect("Font not found");
+                let font = family_handle.fonts()[0].load().expect("Failed load font");
+
+                (font_family, egui::FontData::from_owned(font.copy_font_data().unwrap().to_vec()) )
+            },
+            None => (
+                "Mamelon".to_string(),
+                egui::FontData::from_static(include_bytes!("../fonts/Mamelon-5-Hi-Regular.otf"))
+            ),
+        };
+
         let mut fonts = egui::FontDefinitions::default();
-        fonts.font_data.insert(
-            "Mamelon".to_string(),
-            egui::FontData::from_static(include_bytes!("../fonts/Mamelon-5-Hi-Regular.otf"))
-        );
+        fonts.font_data.insert(font_datas.0.clone(), font_datas.1);
         fonts.fonts_for_family
             .get_mut(&egui::FontFamily::Proportional)
             .unwrap()
-            .insert(0, "Mamelon".to_string());
+            .insert(0, font_datas.0.clone());
 
         fonts.family_and_size.insert(egui::TextStyle::Heading, (egui::FontFamily::Proportional, 14.0));
         fonts.family_and_size.insert(egui::TextStyle::Button, (egui::FontFamily::Proportional, 12.0));
 
+        let font_size_base = font_size as f32;
+        fonts.family_and_size.insert(egui::TextStyle::Body, (egui::FontFamily::Proportional, font_size_base));
+        fonts.family_and_size.insert(egui::TextStyle::Small, (egui::FontFamily::Proportional, font_size_base * 0.8));
+
         ctx.set_fonts(fonts);
+
+        gui_config().get_mut().font_size = Some(font_size);
+        gui_config().get_mut().font_family = Some(font_datas.0);
+    }
+
+    // 幅が 0 の egui::Grid を返す
+    pub fn new_grid<T>(id_source: T, columns: usize, spacing: egui::Vec2) -> egui::Grid where T: std::hash::Hash {
+        egui::Grid::new(id_source)
+            .num_columns(columns)
+            .spacing(spacing)
+            .min_col_width(0.0)
+            .min_row_height(0.0)
+    }
+
+    // デフォルトフォントの設定
+    fn set_default_font(&mut self, ctx: &egui::CtxRef) {
+        self.window_configuration.font_size = gui_config().get_mut().font_size.unwrap_or(12);
+        self.window_configuration.font_family = gui_config().get_mut().font_family.clone().unwrap();
+
+        Self::set_font(ctx, Some(self.window_configuration.font_family.clone()), self.window_configuration.font_size);
     }
 
     // 対戦情報の更新
-    pub fn update_battle_informations(&mut self) {
+    fn update_battle_informations(&mut self) {
         if !self.engine.update_now_data() {
             return;
         }
@@ -177,11 +212,11 @@ impl GUI {
             // 未選択状態での設定はコンフィグから取得しておく
             match self.capture_mode.as_mut() {
                 CaptureMode::Window(_, caption_name) => {
-                    *caption_name = gui_config().get().capture_win_caption.clone();
+                    *caption_name = gui_config().get_mut().capture_win_caption.clone();
                 },
                 CaptureMode::VideoDevice(_, device_id, _) => {
                     *device_id = self.window_configuration.get_device_id(
-                        gui_config().get().capture_device_name.clone()
+                        gui_config().get_mut().capture_device_name.clone()
                     ).unwrap_or(-1);
                 },
                 _ => (),
@@ -192,7 +227,7 @@ impl GUI {
 
         match self.engine.change_capture_mode(&self.capture_mode) {
             Ok(_) => {
-                let _ = gui_config().get().save_config(false);
+                let _ = gui_config().get_mut().save_config(false);
             },
             Err(e) => log::warn!("{}", e),
         }
@@ -203,24 +238,15 @@ impl GUI {
         use i18n_embed::LanguageLoader;
 
         let now_lang = lang_loader().get().current_language();
-        if let Some(lang) = gui_config().get().lang.as_ref() {
+        if let Some(lang) = gui_config().get_mut().lang.as_ref() {
             if !is_initialize && now_lang.language == lang.language {
                 return;
             }
         }
 
-        gui_config().get().lang = Some(now_lang.clone());
+        gui_config().get_mut().lang = Some(now_lang.clone());
         smashbros_resource().get().change_language();
         self.engine.change_language();
-    }
-
-    // 幅が 0 の egui::Grid を返す
-    fn new_grid<T>(id_source: T, columns: usize, spacing: egui::Vec2) -> egui::Grid where T: std::hash::Hash {
-        egui::Grid::new(id_source)
-            .num_columns(columns)
-            .spacing(spacing)
-            .min_col_width(0.0)
-            .min_row_height(0.0)
     }
 }
 impl epi::App for GUI {
@@ -228,12 +254,12 @@ impl epi::App for GUI {
 
     fn setup(&mut self, ctx: &egui::CtxRef, frame: &epi::Frame, _storage: Option<&dyn epi::Storage>) {
         smashbros_resource().init(Some(frame));
-        gui_config().get().load_config(true).expect("Failed to load config");
-        if let Some(lang) = gui_config().get().lang.as_ref() {
+        gui_config().get_mut().load_config(true).expect("Failed to load config");
+        if let Some(lang) = gui_config().get_mut().lang.as_ref() {
             lang_loader().change(lang.clone());
         }
         self.update_language(true);
-        self.set_fonts(ctx);
+        self.set_default_font(ctx);
 
         self.window_battle_information.setup(ctx);
         self.window_battle_history.setup(ctx);
@@ -245,7 +271,7 @@ impl epi::App for GUI {
     }
 
     fn on_exit(&mut self) {
-        let _ = gui_config().get().save_config(true);
+        let _ = gui_config().get_mut().save_config(true);
     }
 
     fn update(&mut self, ctx: &egui::CtxRef, frame: &epi::Frame) {
@@ -567,6 +593,7 @@ enum ConfigTab {
     Source,
     Appearance,
     Detail,
+    Create,
 }
 impl Default for ConfigTab {
     fn default() -> Self { ConfigTab::Source }
@@ -580,11 +607,30 @@ struct WindowConfiguration {
     video_device_id: i32,
     video_device_list: Vec<String>,
     window_caption_list: Vec<String>,
+    font_family_list: Vec<String>,
     pub now_scene: SceneList,
     pub prev_match_ratio: f64,
     pub result_max: i64,
+    pub font_family: String,
+    pub font_size: i32,
 }
 impl WindowConfiguration {
+    // 文字列を任意の長さに調節して、それ以下は「...」をつけるキャプションを作成する
+    fn get_small_caption(caption: String, length: usize) -> String {
+        // 長すぎると表示が崩れるので短くする(UTF-8だと境界がおかしいと None になるっぽいので 4byte分見る)
+        let l = std::cmp::min(caption.len(), length);
+        let mut selected_text = caption.get(0..l).unwrap_or(
+            caption.get(0..(l-1)).unwrap_or(
+                caption.get(0..(l-2)).unwrap_or(
+                    caption.get(0..(l-3)).unwrap_or("")
+                )
+            )
+        ).to_string();
+        selected_text += if selected_text.len() == caption.len() { "" } else { "..." };
+
+        selected_text
+    }
+
     // 初期のウィンドウサイズを返す
     pub fn get_initial_window_size() -> egui::Vec2 {
         let parent_size = GUI::get_initial_window_size();
@@ -654,18 +700,7 @@ impl WindowConfiguration {
         } = self;
         match &mut self.capture_mode {
             CaptureMode::Window(_, window_caption) => {
-                // 長すぎると表示が崩れるので短くする(UTF-8だと境界がおかしいと None になるっぽいので 4byte分見る)
-                let selected_text = window_caption.clone();
-                let l = std::cmp::min(selected_text.len(), 25);
-                let mut selected_text = selected_text.get(0..l).unwrap_or(
-                    selected_text.get(0..(l+1)).unwrap_or(
-                        selected_text.get(0..(l+2)).unwrap_or(
-                            selected_text.get(0..(l+3)).unwrap_or("")
-                        )
-                    )
-                ).to_string();
-                selected_text += if selected_text.len() == window_caption.len() { "" } else { "..." };
-                
+                let selected_text = Self::get_small_caption(window_caption.clone(), 40);
                 egui::ComboBox::from_id_source(GUIIdList::WindowList)
                     .selected_text(selected_text)
                     .width(ui.available_size().x - 10.0)
@@ -706,11 +741,11 @@ impl WindowConfiguration {
                 ui.horizontal(|ui| {
                     if ui.add(egui::SelectableLabel::new(style.visuals == Visuals::dark(), "🌙 Dark")).clicked() {
                         ui.ctx().set_visuals(Visuals::dark());
-                        gui_config().get().visuals = Some(Visuals::dark());
+                        gui_config().get_mut().visuals = Some(Visuals::dark());
                     }
                     if ui.add(egui::SelectableLabel::new(style.visuals == Visuals::light(), "☀ Light")).clicked() {
                         ui.ctx().set_visuals(Visuals::light());
-                        gui_config().get().visuals = Some(Visuals::light());
+                        gui_config().get_mut().visuals = Some(Visuals::light());
                     }
                 });
                 ui.end_row();
@@ -719,7 +754,7 @@ impl WindowConfiguration {
                 let now_lang = lang_loader().get().current_language();
                 let lang_list = lang_loader().get().available_languages(&Localizations).unwrap();
                 ui.label(fl!(lang_loader().get(), "language"));
-                egui::ComboBox::from_id_source(GUIIdList::LanguageKind)
+                egui::ComboBox::from_id_source(GUIIdList::LanguageComboBox)
                     .selected_text(format!("{}-{}", now_lang.language, now_lang.region.unwrap().as_str()))
                     .show_ui(ui, |ui| {
                         for lang in &lang_list {
@@ -729,6 +764,33 @@ impl WindowConfiguration {
                         }
                     });
                 ui.end_row();
+
+                // フォント
+                use eframe::egui::Widget;
+                let font = egui::FontDefinitions::default();
+                ui.label(fl!(lang_loader().get(), "font"));
+                ui.scope(|ui| {
+                    // フォントサイズ
+                    if egui::DragValue::new(&mut self.font_size)
+                        .clamp_range(1..=1000)
+                        .ui(ui).changed()
+                    {
+                        GUI::set_font(ui.ctx(), Some(self.font_family.clone()), self.font_size);
+                    }
+
+                    // フォント一覧
+                    let selected_font = Self::get_small_caption(self.font_family.clone(), 12);
+                    egui::ComboBox::from_id_source(GUIIdList::FontComboBox)
+                        .selected_text(selected_font)
+                        .width(ui.available_size().x - 10.0)
+                        .show_ui(ui, |ui| {
+                            for font_family in &self.font_family_list {
+                                if ui.selectable_value(&mut self.font_family, font_family.clone(), font_family.clone()).changed() {
+                                    GUI::set_font(ui.ctx(), Some(self.font_family.clone()), self.font_size);
+                                }
+                            }
+                    });
+                });
             });
     }
 
@@ -745,11 +807,16 @@ impl WindowConfiguration {
                     .speed(0.5)
                     .ui(ui).changed()
                 {
-                    gui_config().get().result_max = self.result_max;
+                    gui_config().get_mut().result_max = self.result_max;
                 }
 
                 ui.end_row();
             });
+    }
+
+    // 作成の設定の view を返す
+    fn create_settings_view(&mut self, ui: &mut egui::Ui) {
+
     }
 }
 impl GUIModelTrait for WindowConfiguration {
@@ -760,11 +827,12 @@ impl GUIModelTrait for WindowConfiguration {
             .show(ctx, |ui| self.ui(ui));
     }
     fn setup(&mut self, ctx: &egui::CtxRef) {
-        if let Some(visuals) = gui_config().get().visuals.as_ref() {
+        if let Some(visuals) = gui_config().get_mut().visuals.as_ref() {
             ctx.set_visuals(visuals.clone());
         }
-        self.result_max = gui_config().get().result_max;
+        self.result_max = gui_config().get_mut().result_max;
         self.video_device_id = -1;
+        self.font_family_list = font_kit::source::SystemSource::new().all_families().unwrap();
     }
 }
 impl GUIViewTrait for WindowConfiguration {
@@ -773,6 +841,7 @@ impl GUIViewTrait for WindowConfiguration {
             ui.selectable_value(&mut self.config_tab, ConfigTab::Source, fl!(lang_loader().get(), "tab_source"));
             ui.selectable_value(&mut self.config_tab, ConfigTab::Appearance, fl!(lang_loader().get(), "tab_appearance"));
             ui.selectable_value(&mut self.config_tab, ConfigTab::Detail, fl!(lang_loader().get(), "tab_detail"));
+            ui.selectable_value(&mut self.config_tab, ConfigTab::Create, fl!(lang_loader().get(), "tab_create"));
         });
         ui.separator();
 
@@ -780,6 +849,7 @@ impl GUIViewTrait for WindowConfiguration {
             ConfigTab::Source => self.source_settings_view(ui),
             ConfigTab::Appearance => self.appearance_settings_view(ui),
             ConfigTab::Detail => self.detail_settings_view(ui),
+            ConfigTab::Create => self.create_settings_view(ui),
         }
 
         ui.allocate_space(ui.available_size());
@@ -1073,8 +1143,8 @@ impl WindowWinsGraph {
             .min_col_width(120.0)
             .show(ui, |ui| {
                 GUI::new_grid("wins_group", 2, egui::Vec2::new(0.0, 0.0))
-                    .min_col_width(0.0)
-                    .max_col_width(available_size.x / 5.0)
+                    // .min_col_width(0.0)
+                    .min_col_width(available_size.x / 5.0)
                     .show(ui, |ui| {
                         let now_data = match &self.now_data {
                             Some(data) => data,
@@ -1117,8 +1187,6 @@ impl WindowWinsGraph {
                         ui.end_row();
 
                         if self.kind == WinsGraphKind::Gsp {
-                            ui.separator();
-                            ui.separator();
                             ui.end_row();
                         }
 

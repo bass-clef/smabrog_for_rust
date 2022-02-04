@@ -30,6 +30,7 @@ difflib = "0.4.0"
 egui = { version = "0.16", features = ["persistence"] }
 eframe = "0.16"
 fern = "0.6"
+font-kit = "0.10.1"
 i18n-embed = { version = "0", features = ["gettext-system", "desktop-requester", "fluent-system"] }
 i18n-embed-fl = "0"
 image = "0.23"

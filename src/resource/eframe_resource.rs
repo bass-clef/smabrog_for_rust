@@ -174,6 +174,10 @@ pub struct GUIConfig {
     pub lang: Option<LanguageIdentifier>,
     #[serde(default = "crate::engine::SmashBrogEngine::get_default_result_limit")]
     pub result_max: i64,
+    #[serde(default)]
+    pub font_family: Option<String>,
+    #[serde(default)]
+    pub font_size: Option<i32>,
 }
 impl GUIConfig {
     const DEFAULT_CAPTION: &'static str = "smabrog";
@@ -235,7 +239,7 @@ pub struct WrappedGUIConfig {
 }
 impl WrappedGUIConfig {
     // 参照して返さないと、unwrap() で move 違反がおきてちぬ！
-    pub fn get(&mut self) -> &mut GUIConfig {
+    pub fn get_mut(&mut self) -> &mut GUIConfig {
         if self.gui_config.is_none() {
             self.gui_config = Some(GUIConfig::default());
         }

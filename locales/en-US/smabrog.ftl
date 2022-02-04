@@ -28,7 +28,9 @@ tab_character_history   = Chara History
 tab_source      = Source
 tab_appearance  = Appearance
 tab_detail      = Detail
+tab_create      = Create
 
 # 設定ラベルに関する文字列
 theme       = Theme
 language    = Language
+font        = Font

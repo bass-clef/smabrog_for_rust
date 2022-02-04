@@ -28,7 +28,9 @@ tab_character_history   = 対キャラ戦歴
 tab_source      = ソース
 tab_appearance  = 外観
 tab_detail      = 詳細
+tab_create      = 作成
 
 # 設定ラベルに関する文字列
 theme       = テーマ
 language    = 言語
+font        = フォント
