@@ -107,7 +107,7 @@ impl std::str::FromStr for PlayerGroup {
 /// Stamina: 時間制限あり[3,4,5,6,7], ストック数は上限[1,2,3]の降順, HPは上限[100,150,200,250,300]の降順
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BattleRule {
-    Unknown, Time, Stock, Stamina, 
+    Unknown, Time, Stock, Stamina, Tournament,
 }
 impl std::str::FromStr for BattleRule {
     type Err = ();
@@ -117,6 +117,7 @@ impl std::str::FromStr for BattleRule {
             "Time" => Ok(Self::Time),
             "Stock" => Ok(Self::Stock),
             "Stamina" => Ok(Self::Stamina),
+            "Tournament" => Ok(Self::Tournament),
             _ => Ok(Self::Unknown),
         }
     }
@@ -793,8 +794,8 @@ impl SmashbrosData {
     }
     /// 試合情報の保存
     pub fn save_battle(&mut self) {
-        if self.db_collection_id.is_some() {
-            // 既に保存済み
+        if self.db_collection_id.is_some() || !self.is_finished_battle() {
+            // 既に保存済み or バトルが終わってない
             return;
         }
 
@@ -1094,6 +1095,10 @@ impl SmashbrosData {
     pub fn is_valid_power(&self, player_number: i32, maybe_power: i32, prev_power_list: Option<&Vec<i32>>, prev_chara_list: Option<&Vec<String>>, output_log: bool) -> Option<bool> {
         if self.player_count != 2 {
             return None;
+        }
+
+        if maybe_power == -1 {
+            return Some(false);
         }
 
         // 同じキャラを使用していた場合のみ

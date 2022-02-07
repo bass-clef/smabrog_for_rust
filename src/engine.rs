@@ -159,7 +159,7 @@ impl SmashBrogEngine {
 
     /// 現在検出中のシーン名を返す
     pub fn get_captured_scene(&self) -> SceneList {
-        self.scene_manager.get_next_scene()
+        self.scene_manager.get_now_scene()
     }
 
     /// 検出しようとしたシーンの前回の一致度合いを返す

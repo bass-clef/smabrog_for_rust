@@ -481,6 +481,7 @@ impl ReadyToFightScene {
 struct MatchingScene {
     scene_judgment: SceneJudgment,
     scene_judgment_with4: SceneJudgment,
+    scene_judgment_ooo_tournament: SceneJudgment,
 }
 impl Default for MatchingScene {
     fn default() -> Self {
@@ -494,13 +495,37 @@ impl Default for MatchingScene {
                 .set_size(core::Rect{
                     x:0, y:270, width:640, height: 90
                 }),
+            scene_judgment_ooo_tournament: SceneJudgment::new(
+                    imgcodecs::imread("resource/ooo_tournament_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
+                    Some(imgcodecs::imread("resource/ooo_tournament_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
+                )
+                .unwrap()
+                .set_border(0.95)
+                .set_size(core::Rect{
+                    x:0, y:0, width:640, height: 30
+                }),
         }
     }
 }
 impl SceneTrait for MatchingScene {
     fn change_language(&mut self) { *self = Self::default(); }
     fn get_id(&self) -> i32 { SceneList::Matching as i32 }
-    fn get_prev_match(&self) -> Option<&SceneJudgment> { Some(&self.scene_judgment) }
+    fn get_prev_match(&self) -> Option<&SceneJudgment> {
+        // 一番高い確率のものを返す
+        let mut most_ratio = self.scene_judgment.prev_match_ratio;
+        let mut most_scene_judgment = &self.scene_judgment;
+
+        if most_ratio < self.scene_judgment_with4.prev_match_ratio {
+            most_ratio = self.scene_judgment_with4.prev_match_ratio;
+            most_scene_judgment = &self.scene_judgment_with4;
+        }
+        if most_ratio < self.scene_judgment_ooo_tournament.prev_match_ratio {
+            most_ratio = self.scene_judgment_ooo_tournament.prev_match_ratio;
+            most_scene_judgment = &self.scene_judgment_ooo_tournament;
+        }
+
+        Some(most_scene_judgment)
+    }
     
     fn continue_match(&self, now_scene: SceneList) -> bool {
         match now_scene {
@@ -512,25 +537,34 @@ impl SceneTrait for MatchingScene {
     fn is_scene(&mut self, capture_image: &core::Mat, smashbros_data: Option<&mut SmashbrosData>) -> opencv::Result<bool> {
         // 多分 1on1 のほうが多いけど with 4 のほうにも 1on1 が一致するので with4 を先にする
         async_std::task::block_on(async {
+            self.scene_judgment_ooo_tournament.match_captured_scene(&capture_image).await;
+            if self.scene_judgment_ooo_tournament.is_near_match() {
+                return;
+            }
+
             self.scene_judgment_with4.match_captured_scene(&capture_image).await;
             if self.scene_judgment_with4.is_near_match() {
-                return; // async-function
+                return;
             }
 
             self.scene_judgment.match_captured_scene(&capture_image).await;
         });
 
-        if self.scene_judgment.is_near_match() || self.scene_judgment_with4.is_near_match() {
-            if let Some(smashbros_data) = smashbros_data {
-                if self.scene_judgment.is_near_match() {
-                    smashbros_data.initialize_battle(2, true);
-                } else if self.scene_judgment_with4.is_near_match() {
-                    smashbros_data.initialize_battle(4, true);
-                }
+        if let Some(smashbros_data) = smashbros_data {
+            if self.scene_judgment.is_near_match() {
+                smashbros_data.initialize_battle(2, true);
+                return Ok(true);
+            } else if self.scene_judgment_with4.is_near_match() {
+                smashbros_data.initialize_battle(4, true);
+                return Ok(true);
+            } else if self.scene_judgment_ooo_tournament.is_near_match() {
+                smashbros_data.initialize_battle(2, true);
+                smashbros_data.set_rule(BattleRule::Tournament);
+                return Ok(true);
             }
         }
 
-        Ok( self.scene_judgment.is_near_match() || self.scene_judgment_with4.is_near_match() )
+        Ok(false)
     }
 
     fn to_scene(&self, _now_scene: SceneList) -> SceneList { SceneList::Matching }
@@ -568,7 +602,6 @@ impl SceneTrait for HamVsSpamScene {
     fn continue_match(&self, now_scene: SceneList) -> bool {
         match now_scene {
             SceneList::Matching => true,
-            // SceneList::ReadyToFight | SceneList::GameEnd | SceneList::Result => true,
             _ => false,
         }
     }
@@ -587,9 +620,6 @@ impl SceneTrait for HamVsSpamScene {
 
         if self.vs_scene_judgment.is_near_match() {
             imgcodecs::imwrite("ham_vs_spam.png", capture_image, &core::Vector::from(vec![]))?;
-            // if let Some(smashbros_data) = smashbros_data {
-            //     smashbros_data.initialize_battle(2, true);
-            // }
             self.buffer.start_recoding_by_time(std::time::Duration::from_secs(3));
             self.buffer.recoding_frame(capture_image)?;
         }
@@ -1325,7 +1355,7 @@ impl SceneManager {
                 if let Some(scene_judgment) = self.scene_list[index].get_prev_match() {
                     if self.prev_match_ratio < scene_judgment.prev_match_ratio {
                         self.prev_match_ratio = scene_judgment.prev_match_ratio;
-                        self.prev_match_scene = self.now_scene.clone();
+                        self.prev_match_scene = SceneList::to_scene_list(self.scene_list[index].get_id());
                     }
                 }
             }

@@ -1,7 +1,7 @@
 # 適当な文字列
 unselected  = 未選択
 status      = 状態
-empty       = 未設定
+empty       = なし
 next        = 次
 search      = 検索
 exact_match = 完全一致

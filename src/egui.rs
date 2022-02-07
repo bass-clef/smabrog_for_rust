@@ -620,9 +620,9 @@ impl WindowConfiguration {
         // 長すぎると表示が崩れるので短くする(UTF-8だと境界がおかしいと None になるっぽいので 4byte分見る)
         let l = std::cmp::min(caption.len(), length);
         let mut selected_text = caption.get(0..l).unwrap_or(
-            caption.get(0..(l-1)).unwrap_or(
-                caption.get(0..(l-2)).unwrap_or(
-                    caption.get(0..(l-3)).unwrap_or("")
+            caption.get(0..(l+1)).unwrap_or(
+                caption.get(0..(l+2)).unwrap_or(
+                    caption.get(0..(l+3)).unwrap_or("")
                 )
             )
         ).to_string();
@@ -1251,7 +1251,11 @@ impl WindowWinsGraph {
                                 // Light モードのときだけ点を白にすることで、GSP だけをクリッピングして表示しやすいようにする
                                 .color(theme_color)
                                 .name(format!("{}\n{}", plot_name, match self.kind {
-                                    WinsGraphKind::Gsp => format!("{}", self.last_power),
+                                    WinsGraphKind::Gsp => format!("{}", if -1 == self.last_power {
+                                        format!("{}", fl!(lang_loader().get(), "empty"))
+                                    } else {
+                                        format!("{}", self.last_power)
+                                    }),
                                     WinsGraphKind::Rate => format!("o:{}/x:{}", self.wins_lose.0, self.wins_lose.1),
                                 }))
                         );
