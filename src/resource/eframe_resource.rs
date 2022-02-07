@@ -159,6 +159,52 @@ where
     }
 }
 
+// GUI の状態を保持するためのデータ
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct GUIStateConfig {
+    #[serde(default = "GUIStateConfig::default_chara_image")]
+    pub chara_image: bool,
+    #[serde(default = "GUIStateConfig::default_win_rate")]
+    pub win_rate: bool,
+    #[serde(default = "GUIStateConfig::default_win_lose")]
+    pub win_lose: bool,
+    #[serde(default = "GUIStateConfig::default_wins")]
+    pub wins: bool,
+    #[serde(default = "GUIStateConfig::default_graph")]
+    pub graph: bool,
+    #[serde(default = "GUIStateConfig::default_gsp")]
+    pub gsp: bool,
+    #[serde(default = "GUIStateConfig::default_battling")]
+    pub battling: bool,
+}
+impl Default for GUIStateConfig {
+    fn default() -> Self {
+        Self {
+            chara_image: Self::default_chara_image(),
+            win_rate: Self::default_win_rate(),
+            win_lose: Self::default_win_lose(),
+            wins: Self::default_wins(),
+            graph: Self::default_graph(),
+            gsp: Self::default_gsp(),
+            battling: Self::default_battling(),
+        }
+    }
+}
+impl GUIStateConfig {
+    pub fn is_show_wins_group(&self) -> bool {
+        self.chara_image || self.win_rate || self.win_lose || self.wins 
+    }
+
+    pub fn default_chara_image() -> bool { true }
+    pub fn default_win_rate() -> bool { true }
+    pub fn default_win_lose() -> bool { true }
+    pub fn default_wins() -> bool { true }
+    pub fn default_graph() -> bool { true }
+    pub fn default_gsp() -> bool { false }
+    pub fn default_battling() -> bool { true }
+}
+
+
 // 設定ファイル
 #[derive(Debug, Default, Deserialize, Serialize)]
 pub struct GUIConfig {
@@ -178,6 +224,8 @@ pub struct GUIConfig {
     pub font_family: Option<String>,
     #[serde(default)]
     pub font_size: Option<i32>,
+    #[serde(default)]
+    pub gui_state_config: GUIStateConfig,
 }
 impl GUIConfig {
     const DEFAULT_CAPTION: &'static str = "smabrog";

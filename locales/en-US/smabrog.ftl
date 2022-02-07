@@ -1,18 +1,24 @@
 # 適当な文字列
-unselected  = Unselected
-status      = Status
+battling    = Battling Info
+chara_image = Chara Image
 empty       = Empty
-next        = Next
-search      = Search
 exact_match = Exact
+graph       = Graph
+next        = Next
 passage     = Passage
-wins        = Wins
 result_max  = Result Max
+search      = Search
+status      = Status
+million     = M
+unselected  = Unselected
+win_rate    = Win Rate
+win_lose    = Win/Lose
+wins        = Wins
 
 # 戦闘に関する文字列
 battle_information  = Battle Information
 battle_history      = Battle History
-GSP                 = GSP
+gsp                 = GSP
 
 # 検出に関する文字列
 window          = Window
@@ -28,7 +34,7 @@ tab_character_history   = Chara History
 tab_source      = Source
 tab_appearance  = Appearance
 tab_detail      = Detail
-tab_create      = Create
+tab_customize   = Customize
 
 # 設定ラベルに関する文字列
 theme       = Theme

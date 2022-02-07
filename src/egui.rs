@@ -116,17 +116,23 @@ impl GUI {
 
     // フォントの設定
     pub fn set_font(ctx: &egui::CtxRef, font_family: Option<String>, font_size: i32) {
+        let default_fonts = (
+            "Mamelon".to_string(),
+            egui::FontData::from_static(include_bytes!("../fonts/Mamelon-5-Hi-Regular.otf"))
+        );
+
         let font_datas = match font_family {
             Some(font_family) => {
-                let family_handle = font_kit::source::SystemSource::new().select_family_by_name(&font_family).expect("Font not found");
-                let font = family_handle.fonts()[0].load().expect("Failed load font");
-
-                (font_family, egui::FontData::from_owned(font.copy_font_data().unwrap().to_vec()) )
+                if font_family == "Mamelon".to_string() {
+                    default_fonts
+                } else {
+                    let family_handle = font_kit::source::SystemSource::new().select_family_by_name(&font_family).expect("Font not found");
+                    let font = family_handle.fonts()[0].load().expect("Failed load font");
+    
+                    (font_family, egui::FontData::from_owned(font.copy_font_data().unwrap().to_vec()) )
+                }
             },
-            None => (
-                "Mamelon".to_string(),
-                egui::FontData::from_static(include_bytes!("../fonts/Mamelon-5-Hi-Regular.otf"))
-            ),
+            None => default_fonts,
         };
 
         let mut fonts = egui::FontDefinitions::default();
@@ -136,12 +142,12 @@ impl GUI {
             .unwrap()
             .insert(0, font_datas.0.clone());
 
+        fonts.family_and_size.insert(egui::TextStyle::Body, (egui::FontFamily::Proportional, 16.0));
         fonts.family_and_size.insert(egui::TextStyle::Heading, (egui::FontFamily::Proportional, 14.0));
-        fonts.family_and_size.insert(egui::TextStyle::Button, (egui::FontFamily::Proportional, 12.0));
+        fonts.family_and_size.insert(egui::TextStyle::Button, (egui::FontFamily::Proportional, 14.0));
 
         let font_size_base = font_size as f32;
-        fonts.family_and_size.insert(egui::TextStyle::Body, (egui::FontFamily::Proportional, font_size_base));
-        fonts.family_and_size.insert(egui::TextStyle::Small, (egui::FontFamily::Proportional, font_size_base * 0.8));
+        fonts.family_and_size.insert(egui::TextStyle::Small, (egui::FontFamily::Proportional, font_size_base));
 
         ctx.set_fonts(fonts);
 
@@ -160,10 +166,10 @@ impl GUI {
 
     // デフォルトフォントの設定
     fn set_default_font(&mut self, ctx: &egui::CtxRef) {
-        self.window_configuration.font_size = gui_config().get_mut().font_size.unwrap_or(12);
-        self.window_configuration.font_family = gui_config().get_mut().font_family.clone().unwrap();
+        Self::set_font(ctx, gui_config().get_mut().font_family.clone(), gui_config().get_mut().font_size.unwrap_or(12));
 
-        Self::set_font(ctx, Some(self.window_configuration.font_family.clone()), self.window_configuration.font_size);
+        self.window_configuration.font_size = gui_config().get_mut().font_size.clone().unwrap();
+        self.window_configuration.font_family = gui_config().get_mut().font_family.clone().unwrap();
     }
 
     // 対戦情報の更新
@@ -347,9 +353,11 @@ impl GUIModelTrait for WindowBattleInformation {
 }
 impl GUIViewTrait for WindowBattleInformation {
     fn ui(&mut self, ui: &mut egui::Ui) {
-        self.battle_information.show_ui(ui);
-        ui.separator();
-        self.wins_graph.show_ui(ui, fl!(lang_loader().get(), "GSP"));
+        if gui_config().get_mut().gui_state_config.battling {
+            self.battle_information.show_ui(ui);
+            ui.separator();
+        }
+        self.wins_graph.show_ui( ui, fl!(lang_loader().get(), "gsp") );
 
         ui.allocate_space(ui.available_size());
     }
@@ -593,7 +601,7 @@ enum ConfigTab {
     Source,
     Appearance,
     Detail,
-    Create,
+    Customize,
 }
 impl Default for ConfigTab {
     fn default() -> Self { ConfigTab::Source }
@@ -767,7 +775,6 @@ impl WindowConfiguration {
 
                 // フォント
                 use eframe::egui::Widget;
-                let font = egui::FontDefinitions::default();
                 ui.label(fl!(lang_loader().get(), "font"));
                 ui.scope(|ui| {
                     // フォントサイズ
@@ -814,9 +821,22 @@ impl WindowConfiguration {
             });
     }
 
-    // 作成の設定の view を返す
-    fn create_settings_view(&mut self, ui: &mut egui::Ui) {
-
+    // カスタマイズの設定の view を返す
+    fn customize_settings_view(&mut self, ui: &mut egui::Ui) {
+        GUI::new_grid(GUIIdList::DetailTab, 3, egui::Vec2::new(0.0, 5.0))
+            .striped(true)
+            .show(ui, |ui| {
+                ui.checkbox(&mut gui_config().get_mut().gui_state_config.chara_image, fl!(lang_loader().get(), "chara_image"));
+                ui.checkbox(&mut gui_config().get_mut().gui_state_config.win_rate, fl!(lang_loader().get(), "win_rate"));
+                ui.checkbox(&mut gui_config().get_mut().gui_state_config.wins, fl!(lang_loader().get(), "wins"));
+                ui.end_row();
+                ui.checkbox(&mut gui_config().get_mut().gui_state_config.win_lose, fl!(lang_loader().get(), "win_lose"));
+                ui.checkbox(&mut gui_config().get_mut().gui_state_config.graph, fl!(lang_loader().get(), "graph"));
+                ui.checkbox(&mut gui_config().get_mut().gui_state_config.gsp, fl!(lang_loader().get(), "gsp"));
+                ui.end_row();
+                ui.checkbox(&mut gui_config().get_mut().gui_state_config.battling, fl!(lang_loader().get(), "battling"));
+                ui.end_row();
+            });
     }
 }
 impl GUIModelTrait for WindowConfiguration {
@@ -841,7 +861,7 @@ impl GUIViewTrait for WindowConfiguration {
             ui.selectable_value(&mut self.config_tab, ConfigTab::Source, fl!(lang_loader().get(), "tab_source"));
             ui.selectable_value(&mut self.config_tab, ConfigTab::Appearance, fl!(lang_loader().get(), "tab_appearance"));
             ui.selectable_value(&mut self.config_tab, ConfigTab::Detail, fl!(lang_loader().get(), "tab_detail"));
-            ui.selectable_value(&mut self.config_tab, ConfigTab::Create, fl!(lang_loader().get(), "tab_create"));
+            ui.selectable_value(&mut self.config_tab, ConfigTab::Customize, fl!(lang_loader().get(), "tab_customize"));
         });
         ui.separator();
 
@@ -849,7 +869,7 @@ impl GUIViewTrait for WindowConfiguration {
             ConfigTab::Source => self.source_settings_view(ui),
             ConfigTab::Appearance => self.appearance_settings_view(ui),
             ConfigTab::Detail => self.detail_settings_view(ui),
-            ConfigTab::Create => self.create_settings_view(ui),
+            ConfigTab::Customize => self.customize_settings_view(ui),
         }
 
         ui.allocate_space(ui.available_size());
@@ -1137,129 +1157,158 @@ impl WindowWinsGraph {
         }
     }
 
+    fn show_graph(&self, ui: &mut egui::Ui, plot_name: &String) {
+        let theme_color = if ui.ctx().style().visuals == Visuals::dark() {
+            egui::Color32::RED
+        } else {
+            egui::Color32::WHITE
+        };
+        let theme_gray_color = if ui.ctx().style().visuals == Visuals::dark() {
+            egui::Color32::GRAY
+        } else {
+            egui::Color32::WHITE
+        };
+        plot::Plot::new(GUIIdList::PowerPlot)
+            .width(GUI::get_initial_window_size().x / 2.0)
+            .height(40.0)
+            .legend(plot::Legend::default())
+            .view_aspect(1.0)
+            .show_axes([false, false])
+            .show(ui, |ui| {
+                ui.line(
+                    plot::Line::new(plot::Values::from_values( self.point_list.clone() ))
+                        .color(theme_color)
+                );
+                if !self.border_line_list.is_empty() {
+                    for (i, border_line_list) in self.border_line_list.iter().enumerate() {
+                        ui.line(
+                            plot::Line::new(plot::Values::from_values(border_line_list.clone()))
+                                .color(if i == 1 { theme_gray_color } else { egui::Color32::WHITE })
+                                .style(plot::LineStyle::dashed_dense())
+                        );
+                    }
+                }
+                ui.points(
+                    plot::Points::new(plot::Values::from_values( self.point_list.clone() ))
+                        .radius(2.0)
+                        // Light モードのときだけ点を白にすることで、GSP だけをクリッピングして表示しやすいようにする
+                        .color(theme_color)
+                        .name(format!("{}\n{}", plot_name, match self.kind {
+                            WinsGraphKind::Gsp => format!("{}", if -1 == self.last_power {
+                                format!("{}", fl!(lang_loader().get(), "empty"))
+                            } else {
+                                format!("{}", self.last_power)
+                            }),
+                            WinsGraphKind::Rate => format!("o:{}/x:{}", self.wins_lose.0, self.wins_lose.1),
+                        }))
+                );
+            });
+    }
+
+    fn show_wins_group(&self, ui: &mut egui::Ui, available_size: egui::Vec2) {
+        GUI::new_grid("wins_group", 2, egui::Vec2::new(5.0, 0.0))
+        // .min_col_width(0.0)
+        .min_col_width(available_size.x / 5.0)
+        .show(ui, |ui| {
+            let now_data = match &self.now_data {
+                Some(data) => data,
+                None => return,
+            };
+            if !now_data.is_decided_character_name(0) || !now_data.is_decided_character_name(1) {
+                return;
+            }
+
+            // キャラ画像
+            if gui_config().get_mut().gui_state_config.chara_image {
+                ui.scope(|ui| {
+                    if let Some(image) = GUI::get_chara_image(now_data.as_ref().get_character(0), [16.0, 16.0]) {
+                        ui.add(image);
+                    } else {
+                        ui.small("1p");
+                    }
+                    ui.small("x");
+                    if let Some(image) = GUI::get_chara_image(now_data.as_ref().get_character(1), [16.0, 16.0]) {
+                        ui.add(image);
+                    } else {
+                        ui.small("2p");
+                    }
+                });
+            }
+            // 勝率表示
+            if gui_config().get_mut().gui_state_config.win_rate {
+                ui.scope(|ui| {
+                    match self.kind {
+                        WinsGraphKind::Gsp => {
+                            ui.small(format!("{:3.1}%({})", 100.0 * self.win_rate.0, self.win_rate.1));
+                        },
+                        WinsGraphKind::Rate => {
+                            ui.add(egui::Separator::default().vertical());
+                            ui.small(format!("{:3.1}%", 100.0 * self.win_rate.0));
+                        },
+                    }
+                });
+            }
+            ui.end_row();
+
+            if self.kind == WinsGraphKind::Gsp {
+                ui.end_row();
+            }
+
+            // 連勝表示
+            if gui_config().get_mut().gui_state_config.wins {
+                ui.scope(|ui| {
+                    ui.small(format!( "{}", self.wins ));
+                    ui.small(format!( "{}", fl!(lang_loader().get(), "wins") ));
+                });
+            }
+            if gui_config().get_mut().gui_state_config.win_lose {
+                ui.scope(|ui| {
+                    match self.kind {
+                        WinsGraphKind::Gsp => {
+                            // 勝敗数表示
+                            ui.small(format!( "o:{}/x:{}", self.wins_lose.0, self.wins_lose.1 ));
+                        },
+                        WinsGraphKind::Rate => {
+                            // 試合数表示
+                            ui.add(egui::Separator::default().vertical());
+                            ui.small(format!("({})", self.win_rate.1));
+                        },
+                    }
+                });
+            }
+            ui.end_row();
+        });
+    }
+
+    const MAX_FONT_WIDTH: i32 = 32;
     fn show_ui(&self, ui: &mut egui::Ui, plot_name: String) {
         let available_size = ui.available_size();
         GUI::new_grid("wins_graph_group", 2, egui::Vec2::new(0.0, 0.0))
             .min_col_width(120.0)
             .show(ui, |ui| {
-                GUI::new_grid("wins_group", 2, egui::Vec2::new(0.0, 0.0))
-                    // .min_col_width(0.0)
-                    .min_col_width(available_size.x / 5.0)
-                    .show(ui, |ui| {
-                        let now_data = match &self.now_data {
-                            Some(data) => data,
-                            None => return,
-                        };
-                        if !now_data.is_decided_character_name(0) || !now_data.is_decided_character_name(1) {
-                            return;
-                        }
+                if gui_config().get_mut().gui_state_config.is_show_wins_group() {
+                    self.show_wins_group(ui, available_size);
+                }
 
-                        // 対キャラクター勝率
-                        ui.scope(|ui| {
-                            if let Some(image) = GUI::get_chara_image(now_data.as_ref().get_character(0), [16.0, 16.0]) {
-                                ui.add(image);
-                            } else {
-                                ui.add(egui::Label::new("1p"));
-                            }
-                            ui.add(egui::Label::new("x"));
-                            if let Some(image) = GUI::get_chara_image(now_data.as_ref().get_character(1), [16.0, 16.0]) {
-                                ui.add(image);
-                            } else {
-                                ui.add(egui::Label::new("2p"));
-                            }
-                        });
-                        // 勝率表示
-                        ui.scope(|ui| {
-                            match self.kind {
-                                WinsGraphKind::Gsp => {
-                                    ui.add(egui::Label::new(
-                                        format!("{:3.1}%({})", 100.0 * self.win_rate.0, self.win_rate.1)
-                                    ));
-                                },
-                                WinsGraphKind::Rate => {
-                                    ui.add(egui::Separator::default().vertical());
-                                    ui.add(egui::Label::new(
-                                        format!("{:3.1}%", 100.0 * self.win_rate.0)
-                                    ));
-                                },
-                            }
-                        });
-                        ui.end_row();
-
-                        if self.kind == WinsGraphKind::Gsp {
-                            ui.end_row();
-                        }
-
-                        // 連勝表示
-                        ui.add(egui::Label::new(
-                            format!( "{} {}", self.wins, fl!(lang_loader().get(), "wins") )
-                        ));
-                        ui.scope(|ui| {
-                            match self.kind {
-                                WinsGraphKind::Gsp => {
-                                    // 勝敗数表示
-                                    ui.add(egui::Label::new(
-                                        format!( "o:{}/x:{}", self.wins_lose.0, self.wins_lose.1 )
-                                    ));
-                                },
-                                WinsGraphKind::Rate => {
-                                    // 試合数表示
-                                    ui.add(egui::Separator::default().vertical());
-                                    ui.add(egui::Label::new(
-                                        format!("({})", self.win_rate.1)
-                                    ));
-                                },
-                            }
-                        });
-                        ui.end_row();
-                    });
-                
                 // 世界戦闘力グラフの表示
-                let theme_color = if ui.ctx().style().visuals == Visuals::dark() {
-                    egui::Color32::RED
-                } else {
-                    egui::Color32::WHITE
-                };
-                let theme_gray_color = if ui.ctx().style().visuals == Visuals::dark() {
-                    egui::Color32::GRAY
-                } else {
-                    egui::Color32::WHITE
-                };
-                plot::Plot::new(GUIIdList::PowerPlot)
-                    .width(GUI::get_initial_window_size().x / 2.0)
-                    .height(40.0)
-                    .legend(plot::Legend::default())
-                    .view_aspect(1.0)
-                    .show_axes([false, false])
-                    .show(ui, |ui| {
-                        ui.line(
-                            plot::Line::new(plot::Values::from_values( self.point_list.clone() ))
-                                .color(theme_color)
-                        );
-                        if !self.border_line_list.is_empty() {
-                            for (i, border_line_list) in self.border_line_list.iter().enumerate() {
-                                ui.line(
-                                    plot::Line::new(plot::Values::from_values(border_line_list.clone()))
-                                        .color(if i == 1 { theme_gray_color } else { egui::Color32::WHITE })
-                                        .style(plot::LineStyle::dashed_dense())
-                                );
-                            }
-                        }
-                        ui.points(
-                            plot::Points::new(plot::Values::from_values( self.point_list.clone() ))
-                                .radius(2.0)
-                                // Light モードのときだけ点を白にすることで、GSP だけをクリッピングして表示しやすいようにする
-                                .color(theme_color)
-                                .name(format!("{}\n{}", plot_name, match self.kind {
-                                    WinsGraphKind::Gsp => format!("{}", if -1 == self.last_power {
-                                        format!("{}", fl!(lang_loader().get(), "empty"))
-                                    } else {
-                                        format!("{}", self.last_power)
-                                    }),
-                                    WinsGraphKind::Rate => format!("o:{}/x:{}", self.wins_lose.0, self.wins_lose.1),
-                                }))
-                        );
-                    });
+                if gui_config().get_mut().gui_state_config.gsp {
+                    let font_size = gui_config().get_mut().font_size.unwrap_or(16);
+                    if Self::MAX_FONT_WIDTH < font_size {
+                        // 見切れる場合は戦闘力を100万単位にする
+                        let gsp = self.last_power as f32 / 10_000.0;
+                        ui.scope(|ui| {
+                            ui.small(format!( "{:.0}", gsp ));
+                            ui.small(format!( "{}", fl!(lang_loader().get(), "million") ));
+                        });
+                    } else {
+                        ui.scope(|ui| {
+                            ui.small(format!( "{}", self.last_power ));
+                            ui.small(format!( "{}", fl!(lang_loader().get(), "gsp") ));
+                        });
+                    }
+                } else if gui_config().get_mut().gui_state_config.graph {
+                    self.show_graph(ui, &plot_name);
+                }
             });
     }
 }

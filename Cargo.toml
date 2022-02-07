@@ -1,16 +1,16 @@
 [package]
 name = "smabrog"
-version = "0.28.2"
+version = "0.29.0"
 authors = ["Humi@bass_clef_ <bassclef.nico@gmail.com>"]
 edition = "2021"
 
 [package.metadata.winres]
 FileDescription  = "capture logger for SmashBros Special."
-FileVersion      = "0.28.2"
+FileVersion      = "0.29.0"
 LegalCopyright   = "Copyright © 2021 Humi@bass_clef_, and more other..."
 OriginalFilename = "smabrog.exe"
 ProductName      = "smabrog"
-ProductVersion   = "0.28.2"
+ProductVersion   = "0.29.0"
 
 [profile.release]
 opt-level = 0

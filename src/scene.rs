@@ -520,7 +520,7 @@ impl SceneTrait for MatchingScene {
             most_scene_judgment = &self.scene_judgment_with4;
         }
         if most_ratio < self.scene_judgment_ooo_tournament.prev_match_ratio {
-            most_ratio = self.scene_judgment_ooo_tournament.prev_match_ratio;
+            // most_ratio = self.scene_judgment_ooo_tournament.prev_match_ratio;
             most_scene_judgment = &self.scene_judgment_ooo_tournament;
         }
 
