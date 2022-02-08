@@ -31,6 +31,7 @@ tab_character_table     = Chara Table
 tab_character_history   = Chara History
 
 # 設定タブに関する文字列
+config          = Config
 tab_source      = Source
 tab_appearance  = Appearance
 tab_detail      = Detail

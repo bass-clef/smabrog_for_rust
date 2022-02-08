@@ -150,7 +150,7 @@ impl SmashBrogEngine {
     /// 現在対戦中のデータを返す
     pub fn get_now_data(&self) -> SmashbrosData {
         let now_data = self.scene_manager.get_now_data();
-        if now_data.is_playing_battle() || self.data_latest.is_empty() {
+        if now_data.is_playing_battle() || now_data.is_finished_battle() || self.data_latest.is_empty() {
             now_data
         } else {
             self.data_latest[0].clone()

@@ -309,20 +309,46 @@ impl CaptureTrait for CaptureFromVideoDevice {
 impl CaptureFromVideoDevice {
     pub fn new(index: i32) -> opencv::Result<Self> {
         let mut video_capture = match videoio::VideoCapture::new(index, videoio::CAP_DSHOW) {
-            Ok(video_capture) => Box::new(video_capture),
+            Ok(video_capture) => {
+                log::info!("capture video device {}.", index);
+                Box::new(video_capture)
+            },
             Err(e) => {
-                println!("{}", e);
+                log::error!("{}", e);
                 return Err(e)
             },
         };
         video_capture.set(opencv::videoio::CAP_PROP_FRAME_WIDTH, 640f64)?;
         video_capture.set(opencv::videoio::CAP_PROP_FRAME_HEIGHT, 360f64)?;
-        
-        Ok(Self {
+
+        let mut own = Self {
             video_capture,
             prev_image: core::Mat::default(),
             empty_data: unsafe{ core::Mat::new_rows_cols(360, 640, core::CV_8UC3)? },
-        })
+        };
+
+        // 1回目テスト
+        let mut ready_to_fight_scene = ReadyToFightScene::default();
+        let capture_image = match own.get_mat() {
+            Ok(capture_image) => capture_image,
+            Err(e) => {
+                log::error!("{}", e);
+                return Err(e)
+            },
+        };
+
+        ready_to_fight_scene.is_scene(&capture_image, None).unwrap();
+        let scene_judgment = ready_to_fight_scene.get_prev_match().unwrap();
+        if !scene_judgment.is_near_match() {
+            return Err(opencv::Error::new(0, format!("not capture ReadyToFight. max ratio: {} < {}",
+                scene_judgment.prev_match_ratio,
+                scene_judgment.get_border_match_ratio())
+            ));
+        }
+
+        log::info!("match device:{:3.3}% id:{}", scene_judgment.prev_match_ratio, index);
+
+        Ok(own)
     }
 
     /// OpenCV で VideoCapture の ID の一覧が取れないので(永遠の謎)、取得して返す
@@ -337,6 +363,8 @@ impl CaptureFromVideoDevice {
             for caps in re.captures_iter( std::str::from_utf8(&output.stdout).unwrap_or("") ) {
                 device_list.push( String::from(&caps["name"]) );
             }
+        } else {
+            log::error!("output is none by video_device_list.exe");
         }
 
         device_list
@@ -406,7 +434,7 @@ impl CaptureFromWindow {
         // 指定された領域で探す
         let mut is_found = false;
         let mut max_match_ratio = 0.0;
-        let mut ready_to_fight_scene = ReadyToFightScene::new_gray();
+        let mut ready_to_fight_scene = ReadyToFightScene::default();
         let mut find_capture = |own: &mut Self, content_area: &core::Rect, | -> bool {
             let capture_image = own.get_mat().unwrap();
             if capture_image.empty() {
@@ -416,19 +444,11 @@ impl CaptureFromWindow {
 
             // より精度が高いほうを選択
             ready_to_fight_scene.is_scene(&capture_image, None).unwrap();
-            let scene_judgment = if ready_to_fight_scene.red_scene_judgment.prev_match_ratio < ready_to_fight_scene.grad_scene_judgment.prev_match_ratio {
-                &ready_to_fight_scene.grad_scene_judgment
-            } else {
-                &ready_to_fight_scene.red_scene_judgment
-            };
-
-            if max_match_ratio < scene_judgment.prev_match_ratio {
-                max_match_ratio = scene_judgment.prev_match_ratio;
-            }
-
-            if scene_judgment.is_near_match() {
+            let scene_judgment = ready_to_fight_scene.get_prev_match().unwrap();
+            if scene_judgment.is_near_match() && max_match_ratio < scene_judgment.prev_match_ratio {
                 is_found |= true;
-                log::info!("found window:{:3.3}% {:?}", scene_judgment.prev_match_ratio, own.content_area);
+                max_match_ratio = scene_judgment.prev_match_ratio;
+                log::info!("match window:{:3.3}% {:?}", scene_judgment.prev_match_ratio, own.content_area);
                 return true;
             }
 

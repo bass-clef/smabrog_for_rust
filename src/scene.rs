@@ -482,12 +482,13 @@ struct MatchingScene {
     scene_judgment: SceneJudgment,
     scene_judgment_with4: SceneJudgment,
     scene_judgment_ooo_tournament: SceneJudgment,
+    scene_judgment_smash_tournament: SceneJudgment,
 }
 impl Default for MatchingScene {
     fn default() -> Self {
         Self {
             scene_judgment: SceneJudgment::new_with_lang("ready_ok")
-                .set_border(0.95)
+                .set_border(0.92)
                 .set_size(core::Rect{    // 参照される回数が多いので matchTemplate する大きさ減らす
                     x:0, y:270, width:320, height: 90
                 }),
@@ -497,7 +498,16 @@ impl Default for MatchingScene {
                 }),
             scene_judgment_ooo_tournament: SceneJudgment::new(
                     imgcodecs::imread("resource/ooo_tournament_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
-                    Some(imgcodecs::imread("resource/ooo_tournament_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
+                    Some(imgcodecs::imread("resource/tournament_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
+                )
+                .unwrap()
+                .set_border(0.95)
+                .set_size(core::Rect{
+                    x:0, y:0, width:640, height: 30
+                }),
+            scene_judgment_smash_tournament: SceneJudgment::new(
+                    imgcodecs::imread("resource/smash_tournament_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
+                    Some(imgcodecs::imread("resource/tournament_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
                 )
                 .unwrap()
                 .set_border(0.95)
@@ -520,7 +530,6 @@ impl SceneTrait for MatchingScene {
             most_scene_judgment = &self.scene_judgment_with4;
         }
         if most_ratio < self.scene_judgment_ooo_tournament.prev_match_ratio {
-            // most_ratio = self.scene_judgment_ooo_tournament.prev_match_ratio;
             most_scene_judgment = &self.scene_judgment_ooo_tournament;
         }
 
@@ -537,6 +546,11 @@ impl SceneTrait for MatchingScene {
     fn is_scene(&mut self, capture_image: &core::Mat, smashbros_data: Option<&mut SmashbrosData>) -> opencv::Result<bool> {
         // 多分 1on1 のほうが多いけど with 4 のほうにも 1on1 が一致するので with4 を先にする
         async_std::task::block_on(async {
+            // self.scene_judgment_smash_tournament.match_captured_scene(&capture_image).await;
+            // if self.scene_judgment_smash_tournament.is_near_match() {
+            //     return;
+            // }
+
             self.scene_judgment_ooo_tournament.match_captured_scene(&capture_image).await;
             if self.scene_judgment_ooo_tournament.is_near_match() {
                 return;
@@ -559,6 +573,10 @@ impl SceneTrait for MatchingScene {
                 return Ok(true);
             } else if self.scene_judgment_ooo_tournament.is_near_match() {
                 smashbros_data.initialize_battle(2, true);
+                smashbros_data.set_rule(BattleRule::Tournament);
+                return Ok(true);
+            } else if self.scene_judgment_smash_tournament.is_near_match() {
+                smashbros_data.initialize_battle(4, true);
                 smashbros_data.set_rule(BattleRule::Tournament);
                 return Ok(true);
             }
@@ -1350,6 +1368,7 @@ impl SceneManager {
 
     // 現在検出しようとしているシーンの、前回の検出率を返す
     pub fn get_prev_match_ratio(&mut self) -> f64 {
+        self.prev_match_ratio = 0.0;
         for index in 0..self.scene_list.len() {
             if self.scene_list[index].continue_match(self.now_scene) {
                 if let Some(scene_judgment) = self.scene_list[index].get_prev_match() {
@@ -1382,7 +1401,6 @@ impl SceneManager {
         // 遷移?
         if self.scene_list[index].is_scene(&capture_image, Some(&mut self.smashbros_data)).unwrap_or(false) {
             let to_scene = self.scene_list[index].to_scene(self.now_scene);
-            self.prev_match_ratio = 0.0;
 
             // ReadyToFightの 直前のシーンが GameEnd なら SmashbrosData を保存する
             if self.now_scene == SceneList::GameEnd && to_scene == SceneList::ReadyToFight {

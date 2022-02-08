@@ -142,9 +142,9 @@ impl GUI {
             .unwrap()
             .insert(0, font_datas.0.clone());
 
-        fonts.family_and_size.insert(egui::TextStyle::Body, (egui::FontFamily::Proportional, 16.0));
-        fonts.family_and_size.insert(egui::TextStyle::Heading, (egui::FontFamily::Proportional, 14.0));
-        fonts.family_and_size.insert(egui::TextStyle::Button, (egui::FontFamily::Proportional, 14.0));
+        fonts.family_and_size.insert(egui::TextStyle::Heading, (egui::FontFamily::Proportional, 16.0));
+        fonts.family_and_size.insert(egui::TextStyle::Button, (egui::FontFamily::Proportional, 12.0));
+        fonts.family_and_size.insert(egui::TextStyle::Body, (egui::FontFamily::Proportional, 12.0));
 
         let font_size_base = font_size as f32;
         fonts.family_and_size.insert(egui::TextStyle::Small, (egui::FontFamily::Proportional, font_size_base));
@@ -174,6 +174,10 @@ impl GUI {
 
     // 対戦情報の更新
     fn update_battle_informations(&mut self) {
+        // 検出状態
+        self.window_configuration.now_scene = self.engine.get_captured_scene();
+        self.window_configuration.prev_match_ratio = self.engine.get_prev_match_ratio();
+
         if !self.engine.update_now_data() {
             return;
         }
@@ -201,10 +205,6 @@ impl GUI {
             SmashBrogEngine::get_wins_by_data_list(&chara_data_list),
             WinsGraphKind::Gsp
         );
-
-        // 検出状態
-        self.window_configuration.now_scene = self.engine.get_captured_scene();
-        self.window_configuration.prev_match_ratio = self.engine.get_prev_match_ratio();
     }
 
     // 検出モードの更新
@@ -385,6 +385,7 @@ struct WindowBattleHistory {
     character_history_list: Vec<WindowBattleInformationGroup>,
     character_history_graph: WindowWinsGraph,
     is_exact_match: bool,
+    max_battle_count: f32,
 }
 impl WindowBattleHistory {
     pub fn get_initial_window_size() -> egui::Vec2 {
@@ -402,8 +403,13 @@ impl WindowBattleHistory {
 
     const CHARA_IMAGE_ZOOM: f32 = 5.0;
     const CHARA_Y_GROUP_COUNT: i32 = 10;
+    const CHARA_TABLE_WIDTH: f64 = 50.0 - 2.5;
     pub fn set_data(&mut self, all_battle_rate_list: LinkedHashMap<String, (f32, i32)>) {
         self.all_battle_rate_list = all_battle_rate_list;
+
+        self.max_battle_count = self.all_battle_rate_list.iter().fold(0, |max, (_, (_, battle_count))| {
+            if &max < battle_count { *battle_count } else { max }
+        }) as f32;
 
         let mut group_count = HashMap::new();
         for (chara_name, (wins_rate, battle_count)) in &self.all_battle_rate_list {
@@ -432,6 +438,44 @@ impl WindowBattleHistory {
         }
     }
 
+    fn show_table_label(ui: &mut plot::PlotUi) {
+        ui.line(
+            plot::Line::new(
+                plot::Values::from_values(vec![plot::Value::new(-2.5, 0.0), plot::Value::new(25.5, 0.0), plot::Value::new(Self::CHARA_TABLE_WIDTH, 0.0)]),
+            ).color(egui::Color32::RED)
+            .fill(10.0)
+            .name("負け")
+        );
+        ui.line(
+            plot::Line::new(
+                plot::Values::from_values(vec![plot::Value::new(-2.5, 10.0), plot::Value::new(25.5, 10.0), plot::Value::new(Self::CHARA_TABLE_WIDTH, 10.0)]),
+            ).color(egui::Color32::LIGHT_RED)
+            .fill(40.0)
+            .name("不得手")
+        );
+        ui.line(
+            plot::Line::new(
+                plot::Values::from_values(vec![plot::Value::new(-2.5, 40.0), plot::Value::new(25.5, 40.0), plot::Value::new(Self::CHARA_TABLE_WIDTH, 40.0)]),
+            ).color(egui::Color32::YELLOW)
+            .fill(60.0)
+            .name("丁度")
+        );
+        ui.line(
+            plot::Line::new(
+                plot::Values::from_values(vec![plot::Value::new(-2.5, 60.0), plot::Value::new(25.5, 60.0), plot::Value::new(Self::CHARA_TABLE_WIDTH, 60.0)]),
+            ).color(egui::Color32::LIGHT_GREEN)
+            .fill(90.0)
+            .name("得意")
+        );
+        ui.line(
+            plot::Line::new(
+                plot::Values::from_values(vec![plot::Value::new(-2.5, 90.0), plot::Value::new(25.5, 90.0), plot::Value::new(Self::CHARA_TABLE_WIDTH, 90.0)]),
+            ).color(egui::Color32::LIGHT_BLUE)
+            .fill(100.0)
+            .name("勝ち")
+        );
+    }
+
     // キャラ別のグラフ表示
     fn character_table_view(&mut self, ui: &mut egui::Ui) {
         let available_size = ui.available_size();
@@ -441,45 +485,10 @@ impl WindowBattleHistory {
                 plot::Plot::new(GUIIdList::CharacterPlot)
                     .width(available_size.x - 5.0)
                     .height(available_size.y - 5.0)
-                    .legend(plot::Legend::default().text_style(egui::TextStyle::Small))
+                    .legend(plot::Legend::default().text_style(egui::TextStyle::Body))
                     .show_axes([false, true])
                     .show(ui, |ui| {
-                        ui.line(
-                            plot::Line::new(
-                                plot::Values::from_values(vec![plot::Value::new(-2.5, 0.0), plot::Value::new(25.5, 0.0), plot::Value::new(47.5, 0.0)]),
-                            ).color(egui::Color32::RED)
-                            .fill(10.0)
-                            .name("負け")
-                        );
-                        ui.line(
-                            plot::Line::new(
-                                plot::Values::from_values(vec![plot::Value::new(-2.5, 10.0), plot::Value::new(25.5, 10.0), plot::Value::new(47.5, 10.0)]),
-                            ).color(egui::Color32::LIGHT_RED)
-                            .fill(40.0)
-                            .name("不得手")
-                        );
-                        ui.line(
-                            plot::Line::new(
-                                plot::Values::from_values(vec![plot::Value::new(-2.5, 40.0), plot::Value::new(25.5, 40.0), plot::Value::new(47.5, 40.0)]),
-                            ).color(egui::Color32::YELLOW)
-                            .fill(60.0)
-                            .name("丁度")
-                        );
-                        ui.line(
-                            plot::Line::new(
-                                plot::Values::from_values(vec![plot::Value::new(-2.5, 60.0), plot::Value::new(25.5, 60.0), plot::Value::new(47.5, 60.0)]),
-                            ).color(egui::Color32::LIGHT_GREEN)
-                            .fill(90.0)
-                            .name("得意")
-                        );
-                        ui.line(
-                            plot::Line::new(
-                                plot::Values::from_values(vec![plot::Value::new(-2.5, 90.0), plot::Value::new(25.5, 90.0), plot::Value::new(47.5, 90.0)]),
-                            ).color(egui::Color32::LIGHT_BLUE)
-                            .fill(100.0)
-                            .name("勝ち")
-                        );
-        
+                        Self::show_table_label(ui);
                         for (chara_name, (wins_rate, _battle_count)) in &self.all_battle_rate_list {
                             if !self.chara_plot_list.contains_key(chara_name) {
                                 continue;
@@ -500,6 +509,7 @@ impl WindowBattleHistory {
                                     plot::Value::new(self.chara_plot_list[chara_name].x, self.chara_plot_list[chara_name].y - Self::CHARA_IMAGE_ZOOM as f64 * 0.6),
                                     &format!("{:3.1}", wins_rate * 100.0)
                                 ).color(egui::Color32::WHITE)
+                                .style(egui::TextStyle::Body)
                             );
                         };
                     });
@@ -704,28 +714,35 @@ impl WindowConfiguration {
         let Self {
             video_device_list,
             window_caption_list,
+            window_caption,
+            video_device_id,
             ..
         } = self;
         match &mut self.capture_mode {
-            CaptureMode::Window(_, window_caption) => {
-                let selected_text = Self::get_small_caption(window_caption.clone(), 40);
+            CaptureMode::Window(_, cm_window_caption) => {
                 egui::ComboBox::from_id_source(GUIIdList::WindowList)
-                    .selected_text(selected_text)
+                    .selected_text(Self::get_small_caption(cm_window_caption.clone(), 40))
                     .width(ui.available_size().x - 10.0)
                     .show_ui(ui, |ui| {
                         for wc in window_caption_list {
-                            ui.selectable_value(window_caption, wc.clone(), wc.clone());
+                            if ui.add(egui::SelectableLabel::new( wc == cm_window_caption, wc.as_str() )).clicked() {
+                                *cm_window_caption = wc.clone();
+                                *window_caption = wc.clone();
+                            }
                         }
                     });
             },
-            CaptureMode::VideoDevice(_, device_id, _) => {
+            CaptureMode::VideoDevice(_, cm_device_id, _) => {
+                let selected_text = format!( "{}", video_device_list.get(*cm_device_id as usize).unwrap_or(&fl!(lang_loader().get(), "unselected")) );
+                let selected_text = Self::get_small_caption(selected_text.clone(), 40);
                 egui::ComboBox::from_id_source(GUIIdList::DeviceList)
-                    .selected_text(format!( "{}", video_device_list.get(*device_id as usize).unwrap_or(&fl!(lang_loader().get(), "unselected")) ))
+                    .selected_text(selected_text)
                     .width(ui.available_size().x - 10.0)
                     .show_ui(ui, |ui| {
                         for (id, name) in video_device_list.iter().enumerate() {
-                            if ui.add(egui::SelectableLabel::new(*device_id == id as i32, name)).clicked() {
-                                *device_id = id as i32;
+                            if ui.add(egui::SelectableLabel::new(*cm_device_id == id as i32, name)).clicked() {
+                                *cm_device_id = id as i32;
+                                *video_device_id = id as i32;
                             }
                         }
                     });
@@ -733,6 +750,12 @@ impl WindowConfiguration {
             _ => (),
         }
         ui.end_row();
+
+        ui.separator();
+        ui.label(format!(
+            "{}:{:?} {}:{:.0}%", fl!(lang_loader().get(), "status"), self.now_scene,
+            fl!(lang_loader().get(), "next"), self.prev_match_ratio * 100.0
+        ));
     }
 
     // 外観の設定の view を返す
@@ -840,9 +863,9 @@ impl WindowConfiguration {
     }
 }
 impl GUIModelTrait for WindowConfiguration {
-    fn name(&self) -> String { fl!(lang_loader().get(), "status") }
+    fn name(&self) -> String { fl!(lang_loader().get(), "config") }
     fn show(&mut self, ctx: &egui::CtxRef) {
-        egui::Window::new( format!("{}:{:?} {}:{:.0}%", self.name(), self.now_scene, fl!(lang_loader().get(), "next"), self.prev_match_ratio * 100.0) )
+        egui::Window::new( self.name() )
             .default_rect(Self::get_initial_window_rect())
             .show(ctx, |ui| self.ui(ui));
     }
@@ -1297,12 +1320,14 @@ impl WindowWinsGraph {
                         // 見切れる場合は戦闘力を100万単位にする
                         let gsp = self.last_power as f32 / 10_000.0;
                         ui.scope(|ui| {
-                            ui.small(format!( "{:.0}", gsp ));
+                            let gsp_string = if -1 == self.last_power { "なし".to_string() } else { format!( "{:.0}", gsp ) };
+                            ui.small(gsp_string);
                             ui.small(format!( "{}", fl!(lang_loader().get(), "million") ));
                         });
                     } else {
                         ui.scope(|ui| {
-                            ui.small(format!( "{}", self.last_power ));
+                            let gsp_string = if -1 == self.last_power { "なし".to_string() } else { format!( "{}", self.last_power ) };
+                            ui.small(format!( "{}", gsp_string ));
                             ui.small(format!( "{}", fl!(lang_loader().get(), "gsp") ));
                         });
                     }

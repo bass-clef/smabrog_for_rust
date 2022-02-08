@@ -31,6 +31,7 @@ tab_character_table     = 対キャラ表
 tab_character_history   = 対キャラ戦歴
 
 # 設定タブに関する文字列
+config          = 設定
 tab_source      = ソース
 tab_appearance  = 外観
 tab_detail      = 詳細
