@@ -19,6 +19,7 @@ use crate::data::{
 };
 use crate::engine::SmashBrogEngine;
 use crate::resource::{
+    BgmManager,
     gui_config,
     smashbros_resource,
     lang_loader,
@@ -31,6 +32,7 @@ pub fn make_gui_run() -> anyhow::Result<()> {
     native_options.icon_data = Some(GUI::get_icon_data());
     native_options.initial_window_size = Some(GUI::get_initial_window_size());
     native_options.resizable = false;
+    native_options.drag_and_drop_support = true;
 
     let app = GUI::new();
 
@@ -41,11 +43,15 @@ pub fn make_gui_run() -> anyhow::Result<()> {
 // GUIの種類, is_source に指定するのに必要
 #[derive(std::hash::Hash)]
 enum GUIIdList {
+    SourceTab,
     AppearanceTab,
     DetailTab,
+    CustomizeTab,
     SourceKind,
     LanguageComboBox,
     FontComboBox,
+    BgmDeviceComboBox,
+    BgmSessionComboBox,
 
     WindowList,
     DeviceList,
@@ -178,12 +184,18 @@ impl GUI {
         self.window_configuration.now_scene = self.engine.get_captured_scene();
         self.window_configuration.prev_match_ratio = self.engine.get_prev_match_ratio();
 
-        if !self.engine.update_now_data() {
-            return;
+        if gui_config().get_mut().gui_state_config.show_captured {
+            // 検出しているフレームを表示
+            let _ = opencv::highgui::imshow("smabrog - captured", self.engine.get_now_image());
         }
 
         // 対戦中情報
         self.window_battle_information.battle_information.set_data( self.engine.get_now_data() );
+
+        // 下記から、戦歴情報の変動があったときだけにしたい処理
+        if !self.engine.update_now_data() {
+            return;
+        }
 
         // 戦歴
         self.window_battle_history.battle_information_list.clear();
@@ -205,6 +217,11 @@ impl GUI {
             SmashBrogEngine::get_wins_by_data_list(&chara_data_list),
             WinsGraphKind::Gsp
         );
+    }
+
+    // BGM の更新
+    fn update_bgm(&mut self) {
+        self.window_configuration.update_bgm(self.engine.ref_now_data());
     }
 
     // 検出モードの更新
@@ -281,30 +298,10 @@ impl epi::App for GUI {
     }
 
     fn update(&mut self, ctx: &egui::CtxRef, frame: &epi::Frame) {
-        /* 子ウィンドウを3つ作成する
-         * [対戦中情報]
-         *   .対戦情報グループ(リアルタイム更新)
-         *   .直近勝率(10, 50件)
-         *   .戦闘力(1万以下切り捨て表示)
-         * [戦歴]
-         *   .対戦情報グループ(過去 10 件分)
-         * [設定]
-         *   .ソースの設定
-         *     .ウィンドウから
-         *     .ビデオデバイスから
-         *     .デスクトップから
-         *     .未設定
-         * 
-         * .対戦情報グループ
-         *   .1pキャラアイコン vs 2pキャラアイコン
-         *   .ルール(アイコンにしたい), 時間
-         *   .ストック(アイコンにしたい)
-         */ 
-
         // 動作
         if let Err(e) = self.engine.update() {
             // quit
-            // ゆくゆくはエラー回復とかもできるようにしたい
+            // TODO:ゆくゆくはエラー回復とかもできるようにしたい
             log::error!("quit. [{}]", e);
             frame.quit();
             return;
@@ -312,11 +309,12 @@ impl epi::App for GUI {
         self.update_battle_informations();
         self.update_capture_mode();
         self.update_language(false);
+        self.update_bgm();
 
-        // 表示
-        self.window_battle_information.show(ctx);
-        self.window_battle_history.show(ctx);
+        // 表示 (戦歴が最前面になるように下から描画)
         self.window_configuration.show(ctx);
+        self.window_battle_history.show(ctx);
+        self.window_battle_information.show(ctx);
 
         // frame.repaint_signal();
         ctx.request_repaint();
@@ -438,6 +436,7 @@ impl WindowBattleHistory {
         }
     }
 
+    // キャラ表のラベルの表示
     fn show_table_label(ui: &mut plot::PlotUi) {
         ui.line(
             plot::Line::new(
@@ -518,17 +517,23 @@ impl WindowBattleHistory {
 
     // 対キャラの戦歴表示
     fn character_history_view(&mut self, ui: &mut egui::Ui) {
-        use crate::resource::battle_history;
+        use crate::resource::{ battle_history, SmashbrosResource };
         let one_width = ui.available_size().x / 4.0;
         GUI::new_grid(GUIIdList::CharacterHistoryGrid, 4, egui::Vec2::new(5.0, 0.0))
             .show(ui, |ui| {
                 ui.checkbox( &mut self.is_exact_match, fl!(lang_loader().get(), "exact_match") );
-                ui.add_sized([one_width, 18.0], egui::TextEdit::singleline(&mut self.find_character_list[0]));
-                ui.add_sized([one_width, 18.0], egui::TextEdit::singleline(&mut self.find_character_list[1]));
+                ui.add_sized([one_width, 18.0],
+                    egui::TextEdit::singleline(&mut self.find_character_list[0])
+                        .hint_text("1p")
+                );
+                ui.add_sized([one_width, 18.0],
+                    egui::TextEdit::singleline(&mut self.find_character_list[1])
+                        .hint_text("2p")
+                );
                 if ui.button(fl!( lang_loader().get(), "search" )).clicked() {
                     // キャラ名推測をする
                     self.find_character_list = self.find_character_list.iter_mut().map(|chara_name| {
-                        if let Some((new_chara_name, _)) = SmashbrosData::convert_character_name(chara_name.to_uppercase()) {
+                        if let Some((new_chara_name, _)) = SmashbrosResource::convert_character_name(chara_name.to_uppercase()) {
                             return new_chara_name;
                         }
 
@@ -617,22 +622,96 @@ impl Default for ConfigTab {
     fn default() -> Self { ConfigTab::Source }
 }
 // 設定
-#[derive(Default)]
 struct WindowConfiguration {
     config_tab: ConfigTab,
+
+    bgm_manager: BgmManager,
     capture_mode: CaptureMode,
-    window_caption: String,
-    video_device_id: i32,
-    video_device_list: Vec<String>,
+
     window_caption_list: Vec<String>,
+    window_caption: String,
+    video_device_list: Vec<String>,
+    video_device_id: i32,
     font_family_list: Vec<String>,
+    bgm_device_list: HashMap<String, HashMap<String, wasapi::SimpleAudioVolume>>,
+    before_volume: Option<f32>,
+
     pub now_scene: SceneList,
     pub prev_match_ratio: f64,
     pub result_max: i64,
     pub font_family: String,
     pub font_size: i32,
 }
+impl Default for WindowConfiguration {
+    fn default() -> Self { Self::new() }
+}
 impl WindowConfiguration {
+    fn new() -> Self {
+        // WASAPI のほうを先に初期化しないと rodio と競合するっぽい
+        Self {
+            config_tab: ConfigTab::Source,
+
+            bgm_manager: BgmManager::default(),
+            capture_mode: CaptureMode::default(),
+
+            window_caption_list: Vec::new(),
+            window_caption: String::new(),
+            video_device_list: Vec::new(),
+            video_device_id: 0,
+            font_family_list: Vec::new(),
+            bgm_device_list: Self::init_wasapi(),
+            before_volume: None,
+
+            now_scene: SceneList::default(),
+            prev_match_ratio: 0.0,
+            result_max: 0,
+            font_family: String::new(),
+            font_size: 0,
+        }
+    }
+
+    /// WASAPI の初期化と BGM デバイスのリストを作成する
+    pub fn init_wasapi() -> HashMap<String, HashMap<String, wasapi::SimpleAudioVolume>> {
+        wasapi::initialize_sta().expect("Failed to initialize WASAPI.");
+        let mut bgm_device_list: HashMap<String, HashMap<String, wasapi::SimpleAudioVolume>> = HashMap::new();
+        let device_collection = wasapi::DeviceCollection::new(&wasapi::Direction::Render).expect("Failed get eRender devices.");
+        for device_id in 0..device_collection.get_nbr_devices().unwrap_or(0) {
+            let device = device_collection.get_device_at_index(device_id).unwrap();
+            let device_name = match device.get_friendlyname() {
+                Ok(name) => name,
+                Err(_) => continue,
+            };
+            let session_manager = match device.get_sessionmanager() {
+                Ok(session_manager) => session_manager,
+                Err(_) => continue,
+            };
+
+            for i in 0..session_manager.get_session_count().unwrap_or(0) {
+                let session = match session_manager.get_audiosessioncontrol(i) {
+                    Ok(session) => session,
+                    Err(_) => continue,
+                };
+                let process_name = match session.get_process_name() {
+                    Ok(name) => if session.get_process_id().unwrap_or(0) == 0 {
+                        device_name.clone()
+                    } else {
+                        name
+                    },
+                    Err(_) => continue,
+                };
+                let simple_audio_volume = match session.get_simpleaudiovolume() {
+                    Ok(simple_audio_volume) => simple_audio_volume,
+                    Err(_) => continue,
+                };
+
+                bgm_device_list.entry(device_name.clone()).or_insert(HashMap::new())
+                    .insert(process_name, simple_audio_volume);
+            }
+        }
+
+        bgm_device_list
+    }
+
     // 文字列を任意の長さに調節して、それ以下は「...」をつけるキャプションを作成する
     fn get_small_caption(caption: String, length: usize) -> String {
         // 長すぎると表示が崩れるので短くする(UTF-8だと境界がおかしいと None になるっぽいので 4byte分見る)
@@ -683,6 +762,58 @@ impl WindowConfiguration {
         }
     }
 
+    pub fn update_bgm(&mut self, ref_now_data: &SmashbrosData) {
+        // 選択されているデバイスを取得
+        let bgm_device_name = match gui_config().get_mut().bgm_device_name.as_ref() {
+            Some(bgm_device_name) => bgm_device_name,
+            None => return,
+        };
+        let bgm_session_name = match gui_config().get_mut().bgm_session_name.as_ref() {
+            Some(bgm_session_name) => bgm_session_name,
+            None => return,
+        };
+        let simple_audio_volume = match self.bgm_device_list.get(bgm_device_name) {
+            Some(device) => match device.get(bgm_session_name) {
+                Some(simple_audio_volume) => simple_audio_volume,
+                None => return,
+            },
+            None => return,
+        };
+
+        if !ref_now_data.is_playing_battle() {
+            if let Some(before_volume) = self.before_volume {
+                // 試合中でないなら、BGM を停止して、音量を戻す
+                self.bgm_manager.stop();
+                match simple_audio_volume.set_master_volume(before_volume) {
+                    Ok(_) => (),
+                    Err(err) => log::error!("{}", err),
+                }
+                self.before_volume = None;
+            }
+            return;
+        }
+        if !ref_now_data.is_decided_bgm_name() {
+            // BGM が確定していないなら、音量を変更しようがない
+            return;
+        }
+        if gui_config().get_mut().gui_state_config.disable_volume == 1.0 {
+            // 無効化音量が 1.0 だと、そもそも音量を変更しない
+            return;
+        }
+        if self.before_volume.is_some() {
+            // すでに音量が変更されているなら、変更しない
+            return;
+        }
+
+        // BGM を再生して、音量を変更する
+        self.bgm_manager.play_random();
+        self.before_volume = Some(simple_audio_volume.get_master_volume().unwrap_or(1.0));
+        match simple_audio_volume.set_master_volume(self.before_volume.unwrap_or(1.0) * gui_config().get_mut().gui_state_config.disable_volume) {
+            Ok(_) => (),
+            Err(err) => log::error!("{}", err),
+        }
+    }
+
     // キャプチャモードの設定の view を返す
     fn source_settings_view(&mut self, ui: &mut egui::Ui) {
         use crate::capture::{
@@ -690,72 +821,79 @@ impl WindowConfiguration {
             CaptureFromVideoDevice,
         };
 
-        egui::ComboBox::from_id_source(GUIIdList::SourceKind)
-            .width(ui.available_size().x - 10.0)
-            .selected_text(format!("{}", self.capture_mode))
-            .show_ui(ui, |ui| {
-                if ui.add(egui::SelectableLabel::new( self.capture_mode.is_empty(), fl!(lang_loader().get(), "empty") )).clicked() {
-                    self.capture_mode = CaptureMode::new_empty();
+        GUI::new_grid(GUIIdList::SourceTab, 1, egui::Vec2::new(0.0, 5.0))
+            .striped(true)
+            .max_col_width(ui.available_size().x - 5.0)
+            .show(ui, |ui| {
+                egui::ComboBox::from_id_source(GUIIdList::SourceKind)
+                .selected_text(format!("{}", self.capture_mode))
+                .show_ui(ui, |ui| {
+                    if ui.add(egui::SelectableLabel::new( self.capture_mode.is_empty(), fl!(lang_loader().get(), "empty") )).clicked() {
+                        self.capture_mode = CaptureMode::new_empty();
+                    }
+                    if ui.add(egui::SelectableLabel::new( self.capture_mode.is_window(), fl!(lang_loader().get(), "window") )).clicked() {
+                        self.capture_mode = CaptureMode::new_window(self.window_caption.clone());
+                        self.window_caption_list = CaptureFromWindow::get_window_list();
+                    }
+                    if ui.add(egui::SelectableLabel::new( self.capture_mode.is_video_device(), fl!(lang_loader().get(), "video_device") )).clicked() {
+                        self.capture_mode = CaptureMode::new_video_device(self.video_device_id);
+                        self.video_device_list = CaptureFromVideoDevice::get_device_list();
+                    }
+                    if ui.add(egui::SelectableLabel::new( self.capture_mode.is_desktop(), fl!(lang_loader().get(), "desktop") )).clicked() {
+                        self.capture_mode = CaptureMode::new_desktop();
+                    }
+                });
+                ui.end_row();
+
+                let Self {
+                    video_device_list,
+                    window_caption_list,
+                    window_caption,
+                    video_device_id,
+                    ..
+                } = self;
+                match &mut self.capture_mode {
+                    CaptureMode::Window(_, cm_window_caption) => {
+                        egui::ComboBox::from_id_source(GUIIdList::WindowList)
+                            .selected_text(Self::get_small_caption(cm_window_caption.clone(), 40))
+                            .width(ui.available_size().x - 10.0)
+                            .show_ui(ui, |ui| {
+                                for wc in window_caption_list {
+                                    if ui.add(egui::SelectableLabel::new( wc == cm_window_caption, wc.as_str() )).clicked() {
+                                        *cm_window_caption = wc.clone();
+                                        *window_caption = wc.clone();
+                                    }
+                                }
+                            });
+                    },
+                    CaptureMode::VideoDevice(_, cm_device_id, _) => {
+                        let selected_text = format!( "{}", video_device_list.get(*cm_device_id as usize).unwrap_or(&fl!(lang_loader().get(), "unselected")) );
+                        let selected_text = Self::get_small_caption(selected_text.clone(), 40);
+                        egui::ComboBox::from_id_source(GUIIdList::DeviceList)
+                            .selected_text(selected_text)
+                            .width(ui.available_size().x - 10.0)
+                            .show_ui(ui, |ui| {
+                                for (id, name) in video_device_list.iter().enumerate() {
+                                    if ui.add(egui::SelectableLabel::new(*cm_device_id == id as i32, name)).clicked() {
+                                        *cm_device_id = id as i32;
+                                        *video_device_id = id as i32;
+                                    }
+                                }
+                            });
+                    },
+                    _ => (),
                 }
-                if ui.add(egui::SelectableLabel::new( self.capture_mode.is_window(), fl!(lang_loader().get(), "window") )).clicked() {
-                    self.capture_mode = CaptureMode::new_window(self.window_caption.clone());
-                    self.window_caption_list = CaptureFromWindow::get_window_list();
-                }
-                if ui.add(egui::SelectableLabel::new( self.capture_mode.is_video_device(), fl!(lang_loader().get(), "video_device") )).clicked() {
-                    self.capture_mode = CaptureMode::new_video_device(self.video_device_id);
-                    self.video_device_list = CaptureFromVideoDevice::get_device_list();
-                }
-                if ui.add(egui::SelectableLabel::new( self.capture_mode.is_desktop(), fl!(lang_loader().get(), "desktop") )).clicked() {
-                    self.capture_mode = CaptureMode::new_desktop();
-                }
+                ui.end_row();
+        
+                // 状態の表示
+                ui.checkbox(
+                    &mut gui_config().get_mut().gui_state_config.show_captured,
+                    format!(
+                        "{}:{:?} {}:{:.0}%", fl!(lang_loader().get(), "status"), self.now_scene,
+                        fl!(lang_loader().get(), "next"), self.prev_match_ratio * 100.0
+                    )
+                );
             });
-        ui.end_row();
-
-        let Self {
-            video_device_list,
-            window_caption_list,
-            window_caption,
-            video_device_id,
-            ..
-        } = self;
-        match &mut self.capture_mode {
-            CaptureMode::Window(_, cm_window_caption) => {
-                egui::ComboBox::from_id_source(GUIIdList::WindowList)
-                    .selected_text(Self::get_small_caption(cm_window_caption.clone(), 40))
-                    .width(ui.available_size().x - 10.0)
-                    .show_ui(ui, |ui| {
-                        for wc in window_caption_list {
-                            if ui.add(egui::SelectableLabel::new( wc == cm_window_caption, wc.as_str() )).clicked() {
-                                *cm_window_caption = wc.clone();
-                                *window_caption = wc.clone();
-                            }
-                        }
-                    });
-            },
-            CaptureMode::VideoDevice(_, cm_device_id, _) => {
-                let selected_text = format!( "{}", video_device_list.get(*cm_device_id as usize).unwrap_or(&fl!(lang_loader().get(), "unselected")) );
-                let selected_text = Self::get_small_caption(selected_text.clone(), 40);
-                egui::ComboBox::from_id_source(GUIIdList::DeviceList)
-                    .selected_text(selected_text)
-                    .width(ui.available_size().x - 10.0)
-                    .show_ui(ui, |ui| {
-                        for (id, name) in video_device_list.iter().enumerate() {
-                            if ui.add(egui::SelectableLabel::new(*cm_device_id == id as i32, name)).clicked() {
-                                *cm_device_id = id as i32;
-                                *video_device_id = id as i32;
-                            }
-                        }
-                    });
-            },
-            _ => (),
-        }
-        ui.end_row();
-
-        ui.separator();
-        ui.label(format!(
-            "{}:{:?} {}:{:.0}%", fl!(lang_loader().get(), "status"), self.now_scene,
-            fl!(lang_loader().get(), "next"), self.prev_match_ratio * 100.0
-        ));
     }
 
     // 外観の設定の view を返す
@@ -763,8 +901,9 @@ impl WindowConfiguration {
         use i18n_embed::LanguageLoader;
         use crate::resource::Localizations;
 
-        GUI::new_grid(GUIIdList::AppearanceTab, 2, egui::Vec2::new(30.0, 5.0))
+        GUI::new_grid(GUIIdList::AppearanceTab, 2, egui::Vec2::new(10.0, 5.0))
             .striped(true)
+            .max_col_width(ui.available_size().x / 2.0)
             .show(ui, |ui| {
                 // テーマ
                 let style = (*ui.ctx().style()).clone();
@@ -812,7 +951,6 @@ impl WindowConfiguration {
                     let selected_font = Self::get_small_caption(self.font_family.clone(), 12);
                     egui::ComboBox::from_id_source(GUIIdList::FontComboBox)
                         .selected_text(selected_font)
-                        .width(ui.available_size().x - 10.0)
                         .show_ui(ui, |ui| {
                             for font_family in &self.font_family_list {
                                 if ui.selectable_value(&mut self.font_family, font_family.clone(), font_family.clone()).changed() {
@@ -827,8 +965,9 @@ impl WindowConfiguration {
     // 詳細の設定の view を返す
     fn detail_settings_view(&mut self, ui: &mut egui::Ui) {
         use eframe::egui::Widget;
-        GUI::new_grid(GUIIdList::DetailTab, 2, egui::Vec2::new(30.0, 5.0))
+        GUI::new_grid(GUIIdList::DetailTab, 2, egui::Vec2::new(10.0, 5.0))
             .striped(true)
+            .max_col_width(ui.available_size().x / 2.0)
             .show(ui, |ui| {
                 // 結果を取得する限界数
                 ui.label(fl!(lang_loader().get(), "result_max"));
@@ -839,24 +978,103 @@ impl WindowConfiguration {
                 {
                     gui_config().get_mut().result_max = self.result_max;
                 }
-
                 ui.end_row();
+
+                // BGM で無効にした時の音量, デバイス, プロセス名
+                ui.label(&format!( "{} {}", fl!(lang_loader().get(), "disable"), fl!(lang_loader().get(), "volume") ));
+                egui::DragValue::new(&mut gui_config().get_mut().gui_state_config.disable_volume)
+                    .clamp_range(0.0..=1.0)
+                    .speed(0.1)
+                    .ui(ui);
+                ui.end_row();
+
+                let now_device_name = gui_config().get_mut().bgm_device_name.clone().unwrap_or(fl!(lang_loader().get(), "empty"));
+                egui::ComboBox::from_id_source(GUIIdList::BgmDeviceComboBox)
+                    .selected_text(Self::get_small_caption( now_device_name.clone(), 10 ))
+                    .show_ui(ui, |ui| {
+                        for (device_name, _) in &self.bgm_device_list {
+                            if ui.add(egui::SelectableLabel::new(&now_device_name == device_name, device_name)).clicked() {
+                                gui_config().get_mut().bgm_device_name = Some(device_name.clone());
+                            }
+                        }
+                    });
+                let now_session_name = gui_config().get_mut().bgm_session_name.clone().unwrap_or(fl!(lang_loader().get(), "empty"));
+                egui::ComboBox::from_id_source(GUIIdList::BgmSessionComboBox)
+                    .selected_text(Self::get_small_caption( now_session_name.clone(), 10 ))
+                    .show_ui(ui, |ui| {
+                        for (session_name, _) in &self.bgm_device_list[&now_device_name] {
+                            if ui.add(egui::SelectableLabel::new(&now_session_name == session_name, session_name)).clicked() {
+                                gui_config().get_mut().bgm_session_name = Some(session_name.clone());
+                            }
+                        }
+                    });
+                ui.end_row();
+                
+                // 代わりに再生する BGM リストフォルダ
+                ui.label(fl!(lang_loader().get(), "play_list"));
+                ui.add(
+                    egui::TextEdit::singleline(&mut gui_config().get_mut().bgm_playlist_folder)
+                        .hint_text(fl!(lang_loader().get(), "folder"))
+                );
+                if !ui.ctx().input().raw.dropped_files.is_empty() {
+                    if let Some(path_buf) = ui.ctx().input().raw.dropped_files[0].path.clone() {
+                        if path_buf.is_dir() {
+                            gui_config().get_mut().bgm_playlist_folder = path_buf.to_string_lossy().to_string();
+                        }
+                    }
+                }
+                ui.end_row();
+
+                // BGM リスト音量
+                ui.label(&format!( "{} {}", fl!(lang_loader().get(), "play_list"), fl!(lang_loader().get(), "volume") ));
+                ui.add_enabled_ui(!self.bgm_manager.is_playing(), |ui| {
+                    egui::DragValue::new(&mut gui_config().get_mut().gui_state_config.play_list_volume)
+                        .clamp_range(0.0..=1.0)
+                        .speed(0.01)
+                        .ui(ui);
+                    if ui.button(fl!(lang_loader().get(), "play")).clicked() {
+                        self.bgm_manager.set_volume(gui_config().get_mut().gui_state_config.play_list_volume);
+                        self.bgm_manager.beep(440.0, std::time::Duration::from_millis(500));
+                    }
+                });
+                ui.end_row();
+
+                // ストック警告
+                ui.label(&format!( "{} {}", fl!(lang_loader().get(), "stock"), fl!(lang_loader().get(), "warning") ));
+                ui.scope(|ui| {
+                    egui::DragValue::new(&mut gui_config().get_mut().gui_state_config.stock_warning_under)
+                        .clamp_range(2..=4)
+                        .ui(ui);
+                    ui.add(
+                        egui::TextEdit::singleline(&mut gui_config().get_mut().stock_warning_file)
+                            .hint_text("mp4")
+                    );
+                });
+                if !ui.ctx().input().raw.dropped_files.is_empty() {
+                    if let Some(path_buf) = ui.ctx().input().raw.dropped_files[0].path.clone() {
+                        if path_buf.is_file() {
+                            gui_config().get_mut().stock_warning_file = path_buf.to_string_lossy().to_string();
+                        }
+                    }
+                }
             });
     }
 
     // カスタマイズの設定の view を返す
     fn customize_settings_view(&mut self, ui: &mut egui::Ui) {
-        GUI::new_grid(GUIIdList::DetailTab, 3, egui::Vec2::new(0.0, 5.0))
+        GUI::new_grid(GUIIdList::CustomizeTab, 3, egui::Vec2::new(0.0, 5.0))
             .striped(true)
             .show(ui, |ui| {
                 ui.checkbox(&mut gui_config().get_mut().gui_state_config.chara_image, fl!(lang_loader().get(), "chara_image"));
                 ui.checkbox(&mut gui_config().get_mut().gui_state_config.win_rate, fl!(lang_loader().get(), "win_rate"));
                 ui.checkbox(&mut gui_config().get_mut().gui_state_config.wins, fl!(lang_loader().get(), "wins"));
                 ui.end_row();
+
                 ui.checkbox(&mut gui_config().get_mut().gui_state_config.win_lose, fl!(lang_loader().get(), "win_lose"));
                 ui.checkbox(&mut gui_config().get_mut().gui_state_config.graph, fl!(lang_loader().get(), "graph"));
                 ui.checkbox(&mut gui_config().get_mut().gui_state_config.gsp, fl!(lang_loader().get(), "gsp"));
                 ui.end_row();
+
                 ui.checkbox(&mut gui_config().get_mut().gui_state_config.battling, fl!(lang_loader().get(), "battling"));
                 ui.end_row();
             });
@@ -867,6 +1085,7 @@ impl GUIModelTrait for WindowConfiguration {
     fn show(&mut self, ctx: &egui::CtxRef) {
         egui::Window::new( self.name() )
             .default_rect(Self::get_initial_window_rect())
+            .vscroll(true)
             .show(ctx, |ui| self.ui(ui));
     }
     fn setup(&mut self, ctx: &egui::CtxRef) {
@@ -876,6 +1095,10 @@ impl GUIModelTrait for WindowConfiguration {
         self.result_max = gui_config().get_mut().result_max;
         self.video_device_id = -1;
         self.font_family_list = font_kit::source::SystemSource::new().all_families().unwrap();
+        match self.bgm_manager.load(gui_config().get_mut().bgm_playlist_folder.clone()) {
+            Ok(_) => (),
+            Err(err) => log::error!("{}", err),
+        }
     }
 }
 impl GUIViewTrait for WindowConfiguration {

@@ -109,13 +109,13 @@ pub mod utils {
 
     /// Tesseract-OCR を Mat で叩く
     /// tesseract::ocr_from_frame だと「Warning: Invalid resolution 0 dpi. Using 70 instead.」がうるさかったので作成
-    pub fn ocr_with_mat(image: &core::Mat) -> Tesseract {
+    pub fn ocr_with_mat(image: &core::Mat, lang: Option<&str>, seg_mode: Option<tesseract_sys::TessPageSegMode>) -> Tesseract {
         let size = image.channels() * image.cols() * image.rows();
         let data: &[u8] = unsafe{ std::slice::from_raw_parts(image.datastart(), size as usize) };
 
-        match Tesseract::new(None, Some("eng")) {
+        match Tesseract::new(None, Some(lang.unwrap_or("eng"))) {
             Ok(tess) => {
-                tess.set_page_seg_mode(tesseract_sys::TessPageSegMode_PSM_SINGLE_BLOCK)
+                tess.set_page_seg_mode(seg_mode.unwrap_or(tesseract_sys::TessPageSegMode_PSM_RAW_LINE))
                     .set_frame(data, image.cols(), image.rows(),
                         image.channels(), image.channels() * image.cols()).unwrap()
                     .set_source_resolution(70)
@@ -129,7 +129,7 @@ pub mod utils {
     /// OCR(大文字アルファベットのみを検出)
     pub async fn run_ocr_with_upper_alpha(image: &core::Mat) -> Result<String, tesseract::TesseractError> {
         Ok(
-            ocr_with_mat(image)
+            ocr_with_mat(image, None, Some(tesseract_sys::TessPageSegMode_PSM_SINGLE_BLOCK))
                 .set_variable("tessedit_char_whitelist", "ABCDEFGHIJKLMNOPQRSTUVWXYZ").unwrap()
                 .recognize()?
                 .get_text().unwrap_or("".to_string())
@@ -137,12 +137,21 @@ pub mod utils {
         )
     }
     /// OCR(数値を検出)
-    pub async fn run_ocr_with_number(image: &core::Mat) -> Result<String, tesseract::TesseractError> {
+    pub async fn run_ocr_with_number(image: &core::Mat, valid_string: Option<&str>) -> Result<String, tesseract::TesseractError> {
         Ok(
-            ocr_with_mat(image)
-                .set_variable("tessedit_char_whitelist", "0123456789-.").unwrap()
+            ocr_with_mat(image, None, None)
+                .set_variable("tessedit_char_whitelist", valid_string.unwrap_or("0123456789-.")).unwrap()
                 .recognize()?
                 .get_text().unwrap_or("".to_string())
+        )
+    }
+    /// OCR(日本語を検出)
+    pub async fn run_ocr_with_japanese(image: &core::Mat) -> Result<String, tesseract::TesseractError> {
+        Ok(
+            ocr_with_mat(image, Some("jpn"), None)
+                .recognize()?
+                .get_text().unwrap_or("".to_string())
+                .replace("\n", "")
         )
     }
 

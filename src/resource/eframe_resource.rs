@@ -1,4 +1,5 @@
 
+use difflib::sequencematcher::SequenceMatcher;
 use eframe::egui::TextureId;
 use opencv::prelude::MatTraitConst;
 use serde::{
@@ -18,8 +19,34 @@ pub struct SmashbrosResource {
     pub order_image_list: HashMap<i32, TextureId>,
     pub image_size_list: HashMap<TextureId, eframe::egui::Vec2>,
     pub i18n_convert_list: HashMap<String, String>,
+    pub bgm_list: HashMap<String, bool>,
 }
 impl SmashbrosResource {
+    fn matcher(string_list: &Vec<String>, maybe_name: &String, default_name: Option<&str>) -> (String, f32) {
+        let mut max_ratio = 0.0;
+        let mut matcher = SequenceMatcher::new("", "");
+        let mut name = default_name.unwrap_or("");
+        for string_name in string_list {
+            matcher.set_seqs(string_name, maybe_name);
+            if max_ratio < matcher.ratio() {
+                max_ratio = matcher.ratio();
+                name = string_name;
+                if 1.0 <= max_ratio {
+                    break;
+                }
+            }
+        }
+        return (name.to_string(), max_ratio);
+    }
+
+    fn get_texture_id(path: &str, frame: &eframe::epi::Frame) -> (TextureId, eframe::egui::Vec2) {
+        let image = opencv::imgcodecs::imread(path, opencv::imgcodecs::IMREAD_UNCHANGED).unwrap();
+        let mut converted_image = opencv::core::Mat::default();
+        opencv::imgproc::cvt_color(&image, &mut converted_image, opencv::imgproc::COLOR_BGRA2RGBA, 0).expect("failed cvt_color BGR to RGB. from get_texture_id");
+
+        Self::alloc_texture_id(frame, &converted_image)
+    }
+
     pub fn new(frame: &eframe::epi::Frame) -> Self {
         let text = SmashbrosResourceText::new();
         let mut image_size_list = HashMap::new();
@@ -48,6 +75,7 @@ impl SmashbrosResource {
             order_image_list,
             image_size_list,
             i18n_convert_list: text.i18n_convert_list,
+            bgm_list: text.bgm_list,
         }
     }
 
@@ -62,23 +90,69 @@ impl SmashbrosResource {
             order_image_list: HashMap::new(),
             image_size_list: HashMap::new(),
             i18n_convert_list: text.i18n_convert_list,
+            bgm_list: text.bgm_list,
         }
     }
 
-    fn get_texture_id(path: &str, frame: &eframe::epi::Frame) -> (TextureId, eframe::egui::Vec2) {
-        let image = opencv::imgcodecs::imread(path, opencv::imgcodecs::IMREAD_UNCHANGED).unwrap();
-        let mut converted_image = opencv::core::Mat::default();
-        opencv::imgproc::cvt_color(&image, &mut converted_image, opencv::imgproc::COLOR_BGRA2RGBA, 0).expect("failed cvt_color BGR to RGB. from get_texture_id");
-        
-        let image_size = ( converted_image.cols() * converted_image.rows() * 4 ) as usize;
-        let image_data_by_slice: &[u8] = unsafe{ std::slice::from_raw_parts(converted_image.datastart(), image_size) };
+    /// BGM 名が一致したものを返す。そうでない場合は推測して推測率と返す
+    pub fn convert_bgm_list(maybe_bgm_name: String) -> Option<(String, f32)> {
+        if let Some(bgm_name) = smashbros_resource().get().bgm_list.iter().find(|&c| c.0 == &maybe_bgm_name) {
+            // 完全一致(公式名)
+            return Some(( bgm_name.0.clone(), 1.0 ));
+        } else {
+            // 完全一致(公式名)から一番一致率が高い名前を設定する
+            let bgm_list = smashbros_resource().get().bgm_list.clone().into_keys().collect::<Vec<String>>();
+            let (bgm_name, ratio) = Self::matcher(&bgm_list, &maybe_bgm_name, None);
+            if !bgm_name.is_empty() {
+                return Some(( bgm_name, ratio ));
+            }
+        }
+
+        None
+    }
+
+    /// キャラ名が一致したものを返す。そうでない場合は推測して推測率と返す
+    pub fn convert_character_name(maybe_character_name: String) -> Option<(String, f32)> {
+        if smashbros_resource().get().character_list.contains_key(&maybe_character_name) {
+            // 完全一致(公式英名)
+            return Some(( maybe_character_name.clone(), 1.0 ));
+        } else if let Some(chara_name) = smashbros_resource().get().character_list.iter().find(|&c| c.1 == &maybe_character_name) {
+            // 完全一致(公式名)
+            return Some(( chara_name.0.clone(), 1.0 ));
+        } else if let Some(chara_name) = smashbros_resource().get().i18n_convert_list.get(&maybe_character_name) {
+            // i18n(各言語名)
+            return Some(( chara_name.clone(), 1.0 ));
+        } else {
+            // 完全一致(公式英名)から一番一致率が高い名前を設定する
+            let chara_list = smashbros_resource().get().character_list.clone().into_keys().collect::<Vec<String>>();
+            let (chara_name, ratio) = Self::matcher(&chara_list, &maybe_character_name, Some(SmashbrosData::CHARACTER_NAME_UNKNOWN));
+            if chara_name != SmashbrosData::CHARACTER_NAME_UNKNOWN {
+                return Some(( chara_name, ratio ));
+            }
+
+            // 完全一致(公式名)から一番一致率が高い名前を設定する
+            let chara_list = smashbros_resource().get().character_list.clone().into_values().collect::<Vec<String>>();
+            let (chara_name, ratio) = Self::matcher(&chara_list, &maybe_character_name, Some(SmashbrosData::CHARACTER_NAME_UNKNOWN));
+            if chara_name != SmashbrosData::CHARACTER_NAME_UNKNOWN {
+                if let Some(( chara_name, _)) = smashbros_resource().get().character_list.iter().find(|&c| c.1 == &chara_name) {
+                    return Some(( chara_name.clone(), ratio ));
+                }
+            }
+        }
+
+        None
+    }
+
+    pub fn alloc_texture_id(frame: &eframe::epi::Frame, image: &opencv::core::Mat) -> (TextureId, eframe::egui::Vec2) {
+        let image_size = ( image.cols() * image.rows() * 4 ) as usize;
+        let image_data_by_slice: &[u8] = unsafe{ std::slice::from_raw_parts(image.datastart(), image_size) };
         
         (
             frame.alloc_texture(eframe::epi::Image::from_rgba_unmultiplied(
-                [converted_image.cols() as usize, converted_image.rows() as usize],
+                [image.cols() as usize, image.rows() as usize],
                 image_data_by_slice,
             )),
-            eframe::egui::Vec2::new(converted_image.cols() as f32, converted_image.rows() as f32)
+            eframe::egui::Vec2::new(image.cols() as f32, image.rows() as f32)
         )
     }
 
@@ -108,6 +182,7 @@ impl SmashbrosResource {
         self.character_list = text.character_list;
         self.i18n_convert_list = text.i18n_convert_list;
     }
+
 }
 
 /// シングルトンでリソースを保持するため
@@ -176,6 +251,14 @@ pub struct GUIStateConfig {
     pub gsp: bool,
     #[serde(default = "GUIStateConfig::default_battling")]
     pub battling: bool,
+    #[serde(default = "GUIStateConfig::default_show_captured")]
+    pub show_captured: bool,
+    #[serde(default = "GUIStateConfig::default_disable_volume")]
+    pub disable_volume: f32,
+    #[serde(default = "GUIStateConfig::default_play_list_volume")]
+    pub play_list_volume: f32,
+    #[serde(default = "GUIStateConfig::default_stock_warning_under")]
+    pub stock_warning_under: i32,
 }
 impl Default for GUIStateConfig {
     fn default() -> Self {
@@ -187,6 +270,10 @@ impl Default for GUIStateConfig {
             graph: Self::default_graph(),
             gsp: Self::default_gsp(),
             battling: Self::default_battling(),
+            show_captured: Self::default_show_captured(),
+            disable_volume: Self::default_disable_volume(),
+            play_list_volume: Self::default_play_list_volume(),
+            stock_warning_under: Self::default_stock_warning_under(),
         }
     }
 }
@@ -202,6 +289,10 @@ impl GUIStateConfig {
     pub fn default_graph() -> bool { true }
     pub fn default_gsp() -> bool { false }
     pub fn default_battling() -> bool { true }
+    pub fn default_show_captured() -> bool { true }
+    pub fn default_disable_volume() -> f32 { 0.0 }
+    pub fn default_play_list_volume() -> f32 { 1.0 }
+    pub fn default_stock_warning_under() -> i32 { 3 }
 }
 
 
@@ -224,6 +315,14 @@ pub struct GUIConfig {
     pub font_family: Option<String>,
     #[serde(default)]
     pub font_size: Option<i32>,
+    #[serde(default)]
+    pub bgm_device_name: Option<String>,
+    #[serde(default)]
+    pub bgm_session_name: Option<String>,
+    #[serde(default)]
+    pub bgm_playlist_folder: String,
+    #[serde(default)]
+    pub stock_warning_file: String,
     #[serde(default)]
     pub gui_state_config: GUIStateConfig,
 }

@@ -55,6 +55,7 @@ impl SmashBrogEngine {
             self.scene_manager.get_now_data().get_character(0), self.scene_manager.get_now_data().get_character(1)
         ];
 
+        // キャラ名 or 保存時間
         if prev_find_chara_list == self.prev_find_chara_list {
             let prev_saved_time = match self.scene_manager.get_now_data().get_saved_time() {
                 None => return false,
@@ -124,6 +125,11 @@ impl SmashBrogEngine {
         self.result_max = result_max;
     }
 
+    // 現在の検出されたデータの参照を返す
+    pub fn ref_now_data(&self) -> &SmashbrosData {
+        self.scene_manager.ref_now_data()
+    }
+
     /// 直近 result_max 件のデータを返す (result_max 未満も返る)
     /// @result Vec<SmashbrosData> 取得していたデータ郡の clone
     pub fn get_data_latest(&mut self, result_max: i64) -> Vec<SmashbrosData> {
@@ -155,6 +161,11 @@ impl SmashBrogEngine {
         } else {
             self.data_latest[0].clone()
         }
+    }
+
+    /// 現在検出中の Mat を返す
+    pub fn get_now_image(&self) -> &opencv::core::Mat {
+        self.scene_manager.get_now_image()
     }
 
     /// 現在検出中のシーン名を返す

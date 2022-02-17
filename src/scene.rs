@@ -719,7 +719,7 @@ impl HamVsSpamScene {
         }
 
         if !smashbros_data.is_decided_rule() {
-            // タイム制と検出(1on1: これがデフォルトで一番多いルール)
+            // ストック制と検出(1on1: これがデフォルトで一番多いルール)
             async_std::task::block_on(async {
                 rule_scene_judgment.match_captured_scene(capture_image).await;
             });
@@ -736,13 +736,14 @@ impl HamVsSpamScene {
         let mut hp_area: Option<core::Mat> = None;
         match smashbros_data.get_rule() {
             BattleRule::Time => {
+                // TODO:
             },
             BattleRule::Stock => {
                 // 制限時間の位置を切り取って
-                // time: xy:275x335, wh:9x12
-                time_area = Some(core::Mat::roi( capture_image, core::Rect {x:275, y:335, width:9, height:12}).unwrap() );
-                // stock: xy:359x335, wh:9x12
-                stock_area = Some(core::Mat::roi( capture_image, core::Rect {x:359, y:335, width:9, height:12}).unwrap() );
+                // time: xy:275x335, wh:10x17
+                time_area = Some(core::Mat::roi( capture_image, core::Rect {x:275, y:335, width:10, height:17}).unwrap() );
+                // stock: xy:359x335, wh:10x17
+                stock_area = Some(core::Mat::roi( capture_image, core::Rect {x:359, y:335, width:10, height:17}).unwrap() );
             },
             BattleRule::Stamina => {
                 // TODO:
@@ -768,7 +769,7 @@ impl HamVsSpamScene {
     }
 
     pub fn captured_time(capture_image: &mut core::Mat, smashbros_data: &mut SmashbrosData) -> opencv::Result<()> {
-        let time = match Self::captured_convert_string(capture_image, r"\s*(\d)\s*") {
+        let time = match Self::captured_convert_string(capture_image, r"\s*(\d)\s*", Some("234567")) {
             Ok(time) => time.parse::<u64>().unwrap_or(0) * 60,
             Err(_) => 0,
         };
@@ -779,7 +780,7 @@ impl HamVsSpamScene {
     }
 
     pub fn captured_stock(capture_image: &mut core::Mat, smashbros_data: &mut SmashbrosData) -> opencv::Result<()> {
-        let stock: i32 = match Self::captured_convert_string(capture_image, r"\s*(\d)\s*") {
+        let stock: i32 = match Self::captured_convert_string(capture_image, r"\s*(\d)\s*", Some("123")) {
             Ok(stock) => stock.parse().unwrap_or(-1),
             Err(_) => 0,
         };
@@ -796,23 +797,22 @@ impl HamVsSpamScene {
         Ok(())
     }
 
-    /// capture_image から検出した文字列を regex_pattern で正規表現にかけて返す
-    pub fn captured_convert_string(capture_image: &mut core::Mat, regex_pattern: &str) -> opencv::Result<String> {
+    /// capture_image から検出した文字列を regex_pattern で正規表現にかけて文字列(数値)にして返す
+    pub fn captured_convert_string(capture_image: &mut core::Mat, regex_pattern: &str, valid_string: Option<&str>) -> opencv::Result<String> {
         use regex::Regex;
         // 近似白黒処理して
         let mut gray_capture_image = core::Mat::default();
-        imgproc::threshold(capture_image, &mut gray_capture_image, 250.0, 255.0, imgproc::THRESH_BINARY)?;
+        imgproc::threshold(capture_image, &mut gray_capture_image, 252.0, 255.0, imgproc::THRESH_BINARY)?;
         let mut work_capture_image = core::Mat::default();
         utils::cvt_color_to(&gray_capture_image, &mut work_capture_image, ColorFormat::GRAY as i32)?;
 
         // 輪郭捕捉して(数値の範囲)
         let contour_image = utils::trimming_any_rect(
-            capture_image, &work_capture_image, Some(1), Some(1.0), None, false, None)?;
-        let mut gray_contour_image = core::Mat::default();
-        utils::cvt_color_to(&contour_image, &mut gray_contour_image, ColorFormat::RGB as i32)?;
+            capture_image, &work_capture_image, Some(5), Some(1.0), None, false, None)?;
+        utils::cvt_color_to(&contour_image, &mut work_capture_image, ColorFormat::RGB as i32)?;
 
         // tesseract で文字(数値)を取得して, 余計な文字を排除
-        let text = &async_std::task::block_on(utils::run_ocr_with_number(&gray_contour_image)).unwrap().to_string();
+        let text = &async_std::task::block_on(utils::run_ocr_with_number(&gray_capture_image, valid_string)).unwrap().to_string();
         let re = Regex::new(regex_pattern).unwrap();
         if let Some(caps) = re.captures( text ) {
             return Ok( caps[1].to_string() );
@@ -825,6 +825,7 @@ impl HamVsSpamScene {
 /// 試合開始の検出
 struct GameStartScene {
     scene_judgment: SceneJudgment,
+    is_scene: bool,
 }
 impl Default for GameStartScene {
     fn default() -> Self {
@@ -833,6 +834,7 @@ impl Default for GameStartScene {
                 imgcodecs::imread("resource/battle_time_zero_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
                 Some(imgcodecs::imread("resource/battle_time_zero_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
             ).unwrap(),
+            is_scene: false,
         }
     }
 }
@@ -858,11 +860,20 @@ impl SceneTrait for GameStartScene {
         });
 
         if 0.80 < self.scene_judgment.prev_match_ratio &&
-            0.99 <= 568.0 / self.scene_judgment.prev_match_point.x as f32 && 0.99 <= 13.0 / self.scene_judgment.prev_match_point.y as f32 {
-                if let Some(smashbros_data) = smashbros_data {
-                    smashbros_data.start_battle();
-                }
-                return Ok(true);
+            0.99 <= 568.0 / self.scene_judgment.prev_match_point.x as f32 &&
+            0.99 <= 13.0 / self.scene_judgment.prev_match_point.y as f32
+        {
+            self.is_scene = true;
+            if let Some(smashbros_data) = smashbros_data {
+                self.captured_count_down(capture_image, smashbros_data)?;
+            }
+        } else if self.is_scene {
+            self.is_scene = false;
+            if let Some(smashbros_data) = smashbros_data {
+                smashbros_data.start_battle();
+            }
+    
+            return Ok(true);
         }
 
         Ok(false)
@@ -874,6 +885,39 @@ impl SceneTrait for GameStartScene {
     fn recoding_scene(&mut self, _capture: &core::Mat) -> opencv::Result<()> { Ok(()) }
     fn is_recoded(&self) -> bool { false }
     fn detect_data(&mut self, _smashbros_data: &mut SmashbrosData) -> opencv::Result<()> { Ok(()) }
+}
+impl GameStartScene {
+    // カウントダウン が検出されているフレームの処理
+    fn captured_count_down(&mut self, capture_image: &core::Mat, smashbros_data: &mut SmashbrosData) -> opencv::Result<()> {
+        self.captured_bgm_name(capture_image, smashbros_data)?;
+
+        Ok(())
+    }
+
+    // BGM が検出されているフレームを処理
+    fn captured_bgm_name(&mut self, capture_image: &core::Mat, smashbros_data: &mut SmashbrosData) -> opencv::Result<()> {
+        let mut bgm_capture_image = core::Mat::roi(capture_image, core::Rect::new(18, 30, 240, 18))?;
+
+        // 近似白黒処理して
+        let mut gray_capture_image = core::Mat::default();
+        imgproc::threshold(&bgm_capture_image, &mut gray_capture_image, 100.0, 255.0, imgproc::THRESH_BINARY)?;
+        let mut work_capture_image = core::Mat::default();
+        utils::cvt_color_to(&gray_capture_image, &mut work_capture_image, ColorFormat::GRAY as i32)?;
+
+        // 白黒反転して
+        core::bitwise_not(&work_capture_image, &mut bgm_capture_image, &core::no_array())?;
+
+        // tesseract で文字列を取得して, 余計な文字を排除
+        let bgm_text = &async_std::task::block_on(utils::run_ocr_with_japanese(&bgm_capture_image)).unwrap().to_string();
+        if bgm_text.is_empty() {
+            return Ok(());
+        }
+        let bgm_text = bgm_text.replace(" ", "");
+
+        smashbros_data.guess_bgm_name(bgm_text);
+
+        Ok(())
+    }
 }
 
 /// 試合中の検出
@@ -1023,7 +1067,7 @@ impl GamePlayingScene {
                 &mut stock_area_image, &gray_stock_area_image, Some(5), Some(1000.0), None, true, None)?;
 
             // tesseract で文字(数値)を取得して, 余計な文字を排除
-            let number = &async_std::task::block_on(utils::run_ocr_with_number(&stock_contour_image)).unwrap().trim().to_string();
+            let number = &async_std::task::block_on(utils::run_ocr_with_number(&stock_contour_image, Some("123"))).unwrap().trim().to_string();
             if let Some(caps) = re.captures( number ) {
                 smashbros_data.guess_stock( player_count, (&caps[1]).parse().unwrap_or(-1) );
             }
@@ -1302,7 +1346,7 @@ impl ResultScene {
             utils::cvt_color_to(&power_contour_image, &mut power_area_image, ColorFormat::RGB as i32)?;
 
             // tesseract で文字(数値)を取得して, 余計な文字を排除
-            let text = &async_std::task::block_on(utils::run_ocr_with_number(&power_area_image)).unwrap().to_string();
+            let text = &async_std::task::block_on(utils::run_ocr_with_number(&power_area_image, Some("0123456789"))).unwrap().to_string();
             let number = re.split(text).collect::<Vec<&str>>().join(""); // 5桁まで (\d,\d,\d,\d,\d)
             smashbros_data.guess_power( player_count, number.parse().unwrap_or(-1) );
         }
@@ -1322,6 +1366,7 @@ pub struct SceneManager {
     pub dummy_local_time: chrono::DateTime<chrono::Local>,
     pub prev_match_ratio: f64,
     pub prev_match_scene: SceneList,
+    capture_image: core::Mat,
 }
 impl Default for SceneManager {
     fn default() -> Self {
@@ -1343,10 +1388,16 @@ impl Default for SceneManager {
             dummy_local_time: chrono::Local::now(),
             prev_match_ratio: 0.0,
             prev_match_scene: SceneList::default(),
+            capture_image: core::Mat::default(),
         }
     }
 }
 impl SceneManager {
+    // 現在の検出されたデータの参照を返す
+    pub fn ref_now_data(&self) -> &SmashbrosData {
+        &self.smashbros_data
+    }
+
     // 現在の検出されたデータを返す
     pub fn get_now_data(&self) -> SmashbrosData {
         let mut cloned_data = self.smashbros_data.clone();
@@ -1354,6 +1405,11 @@ impl SceneManager {
         cloned_data.set_id(Some("dummy_id".to_string()));
         
         cloned_data
+    }
+
+    // 現在の Mat を返す
+    pub fn get_now_image(&self) -> &core::Mat {
+        &self.capture_image
     }
 
     // 現在のシーンを返す
@@ -1384,7 +1440,7 @@ impl SceneManager {
     }
 
     // シーンを更新する
-    pub async fn update_scene<'a>(&mut self, capture_image: &'a mut core::Mat, index: usize, is_loading: bool) {
+    pub async fn update_scene<'a>(&mut self, capture_image: &'a core::Mat, index: usize, is_loading: bool) {
         // シーンによって適切な時に録画される
         self.scene_list[index].recoding_scene(&capture_image).unwrap_or(());
         if self.scene_list[index].is_recoded() {
@@ -1418,13 +1474,15 @@ impl SceneManager {
 
     // 全てのシーンを更新する
     pub fn update_scene_list(&mut self) -> opencv::Result<()> {
-        let mut capture_image = self.capture.get_mat()?;
+        let capture_image = self.capture.get_mat()?;
+        self.capture_image = capture_image.clone();
+
         let is_loading = self.scene_loading.is_scene(&capture_image, None)?;
 
         // 現在キャプチャと比較して遷移する
         for index in 0..self.scene_list.len() {
             async_std::task::block_on(async {
-                self.update_scene(&mut capture_image, index, is_loading).await;
+                self.update_scene(&capture_image, index, is_loading).await;
             });
         }
 

@@ -1,8 +1,10 @@
 # 適当な文字列
-battling    = Battling Info
+battling    = Battle Info
 chara_image = Chara Image
+disable     = Disable
 empty       = Empty
 exact_match = Exact
+folder      = Folder
 graph       = Graph
 next        = Next
 passage     = Passage
@@ -10,7 +12,12 @@ result_max  = Result Max
 search      = Search
 status      = Status
 million     = M
+play        = Play
+play_list   = Play List
+stock       = Stock
 unselected  = Unselected
+volume      = Volume
+warning     = Warning
 win_rate    = Win Rate
 win_lose    = Win/Lose
 wins        = Wins

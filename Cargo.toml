@@ -25,6 +25,12 @@ winres = "0.1"
 version = "1.9.0"
 features = ["tokio1"]
 
+[dependencies.windows]
+version = "0.32.0"
+features = [
+    "Win32_Media_Audio"
+]
+
 [dependencies]
 anyhow = "1.0"
 bson = "2.1.0"
@@ -42,7 +48,9 @@ log = "0.4"
 mongodb = { version = "1.2.5", features = ["async-std-runtime"], default-features = false }
 once_cell = "1.7.2"
 opencv = { version = "0.62", features = ["clang-runtime"] }
+rand = "0.8.5"
 regex = "1.4.5"
+rodio = { version = "0.15.0", default-features = false, features = ["symphonia-all"] }
 rust-embed = "6"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.64"
@@ -52,5 +60,6 @@ tesseract = { path = "./tesseract-rs-master" }
 tesseract-sys = { path = "./tesseract-sys-master" }
 thiserror = "1.0.24"
 tokio = { version = "1", features = ["full"] }
+wasapi = { path = "./wasapi-rs-master" }
 winapi = "0.3.9"
 winit = "0.24.0"

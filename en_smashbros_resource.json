@@ -65,6 +65,8 @@
         "PEACH": "Peach",
         "PICHU": "Pichu",
         "PIKACHU": "Pikachu",
+        "PIKMINALPH": "Alph",
+        "PIKMINOLIMAR": "Olimar",
         "PIRANHAPLANT": "Piranha Plant",
         "PIT": "Pit",
         "POKEMONTRAINER": "Pokémon Trainer",
@@ -136,6 +138,7 @@
         "ROBIN": "REFLET",
         "ROSALINALUMA": "ROSETTACHIKO",
         "VILLAGER": "MURABITO"
-    }
+    },
+    "bgm_list": {}
 }
   

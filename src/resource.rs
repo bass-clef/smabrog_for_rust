@@ -39,6 +39,7 @@ pub mod eframe_resource;
 pub use eframe_resource::{
     gui_config,
     smashbros_resource,
+    SmashbrosResource,
 };
 
 
@@ -87,6 +88,8 @@ pub struct SmashbrosResourceText {
 
     #[serde(default)]
     i18n_convert_list: HashMap<String, String>,
+    #[serde(default)]
+    bgm_list: HashMap<String, bool>,
 }
 impl Default for SmashbrosResourceText {
     fn default() -> Self {
@@ -101,11 +104,12 @@ impl SmashbrosResourceText {
         let mut own = Self::load_resources(&path);
         log::info!("loaded SmashBros by {} resource version [{}.*.*]", lang.as_str(), own.version);
 
-        // icon_list は全言語のを読み込んでおく
+        // icon_list, bgm_list は全言語のを読み込んでおく
         for lang in lang_loader().get().available_languages(&Localizations).unwrap() {
             let path = format!("{}_{}", lang.language.as_str(), SmashbrosResourceText::FILE_PATH);
 
             own.icon_list.extend(Self::load_resources(&path).icon_list);
+            own.bgm_list.extend(Self::load_resources(&path).bgm_list);
         }
 
         own
@@ -310,4 +314,121 @@ static mut BATTLE_HISTORY: WrappedBattleHistory = WrappedBattleHistory {
 };
 pub fn battle_history() -> &'static mut WrappedBattleHistory {
     unsafe { &mut BATTLE_HISTORY }
+}
+
+
+use rodio::{
+    OutputStream,
+    Sink,
+    Source,
+};
+/// BGM の再生とフォルダを管理するクラス
+pub struct BgmManager {
+    bgm_list: Vec<String>,
+    current_bgm: Option<usize>,
+    sink: Sink,
+    stream: OutputStream,
+    volume: f32,
+}
+impl Default for BgmManager {
+    fn default() -> Self { Self::new() }
+}
+impl BgmManager {
+    pub fn new() -> Self {
+        let (stream, stream_handle) = OutputStream::try_default().unwrap();
+        let sink = Sink::try_new(&stream_handle).unwrap();
+
+        Self {
+            bgm_list: Vec::new(),
+            current_bgm: None,
+            sink,
+            stream,
+            volume: 1.0,
+        }
+    }
+
+    fn play_source<I: rodio::Sample + Send, S: Source<Item = I> + Send + 'static>(&mut self, source: S) {
+        let (stream, stream_handle) = OutputStream::try_default().unwrap();
+        let sink = Sink::try_new(&stream_handle).unwrap();
+        self.sink = sink;
+        self.stream = stream;
+
+        self.sink.set_volume(self.volume);
+        self.sink.append(source);
+    }
+
+    // path を精査して、BGM リストを作成する
+    pub fn load(&mut self, path: String) -> Result<(), anyhow::Error> {
+        let path = std::path::PathBuf::from(path);
+        let dir = match path.read_dir() {
+            Ok(dir) => dir,
+            Err(_e) => {
+                log::error!("Failed read_dir. path: {:?}", path);
+                return Err(anyhow::anyhow!("Failed read_dir. path: {:?}", path));
+            },
+        };
+
+        self.bgm_list.clear();
+        for entry in dir {
+            if let Ok(entry) = entry {
+                let path = entry.path();
+                if let Some(ext) = path.extension() {
+                    match ext.to_str().unwrap() {
+                        "aac"|"alac"|"flac"|"mkv"|"mp3"|"mp4"|"ogg"|"vorbis"|"wav"|"webm" => (),
+                        _ => {
+                            log::warn!("Invalid extension. path: {:?}", path);
+                            continue;
+                        },
+                    }
+                } else {
+                    log::warn!("Invalid extension. path: {:?}", path);
+                    continue;
+                }
+                let file_path = path.to_string_lossy().to_string();
+                self.bgm_list.push(file_path);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// 現在再生中のリストを破棄する
+    pub fn stop(&mut self) {
+        self.sink.stop();
+        self.current_bgm = None;
+    }
+
+    /// BGM リストの index を再生する
+    pub fn play(&mut self, index: usize) {
+        if self.is_playing() {
+            self.stop();
+        }
+        self.current_bgm = Some(index);
+        let path = std::path::PathBuf::from(self.bgm_list[index].clone());
+        let source = rodio::Decoder::new(std::fs::File::open(path).unwrap()).unwrap();
+        self.play_source(source);
+    }
+
+    /// BGM リストの一曲をランダムで再生する
+    pub fn play_random(&mut self) {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        self.play(rng.gen_range( 0..self.bgm_list.len() ));
+    }
+
+    /// ビープ音を鳴らす
+    pub fn beep(&mut self, freq: f32, duration: std::time::Duration) {
+        let source = rodio::source::SineWave::new(freq).take_duration(duration);
+        self.play_source(source);
+    }
+
+    /// 音量の変更
+    pub fn set_volume(&mut self, volume: f32) {
+        self.volume = volume;
+    }
+
+    /// 再生中かどうか
+    pub fn is_playing(&self) -> bool {
+        !self.sink.empty()
+    }
 }

@@ -1,6 +1,5 @@
 
 use chrono::DateTime;
-use difflib::sequencematcher::SequenceMatcher;
 use serde::{
     de::Visitor,
     Deserialize,
@@ -236,7 +235,7 @@ enum SmashbrosDataField {
     GroupList(&'static str),
     StockList(&'static str),
     OrderList(&'static str),
-    PowerList(&'static str)
+    PowerList(&'static str),
 }
 impl SmashbrosDataField {
     fn name(&self) -> &'static str {
@@ -403,6 +402,9 @@ pub struct SmashbrosData {
 
     prev_chara_list: Vec<String>,
     prev_power_list: Vec<i32>,
+
+    /* serde(skip) */
+    bgm_name: ValueGuesser<String>,
 }
 impl Default for SmashbrosData {
     fn default() -> Self { Self::new() }
@@ -639,7 +641,8 @@ impl SmashbrosData {
         SmashbrosDataField::GroupList{ 0: "group_list" },
         SmashbrosDataField::StockList{ 0: "stock_list" },
         SmashbrosDataField::OrderList{ 0: "order_list" },
-        SmashbrosDataField::PowerList{ 0: "power_list" }
+        SmashbrosDataField::PowerList{ 0: "power_list" },
+
     ];
     // キャラクター名が不明時の文字列
     pub const CHARACTER_NAME_UNKNOWN: &'static str = "unknown";
@@ -670,6 +673,8 @@ impl SmashbrosData {
 
             prev_chara_list: vec![],
             prev_power_list: vec![],
+
+            bgm_name: ValueGuesser::new("".to_string()),
         }
     }
 
@@ -729,6 +734,8 @@ impl SmashbrosData {
         self.max_stock_list = Some( max_stock_list );
         self.max_hp_list = Some( max_hp_list );
 
+        self.bgm_name = ValueGuesser::new("".to_string());
+
         return true;
     }
 
@@ -784,7 +791,7 @@ impl SmashbrosData {
 
         self.initialize_data()
     }
-    /// 試合開始の設定 (ReadyToFight,Match 系で呼ぶ)
+    /// 試合開始の設定 (GameStart で呼ぶ)
     pub fn start_battle(&mut self) {
         self.start_time = Some(chrono::Local::now());
     }
@@ -924,7 +931,7 @@ impl SmashbrosData {
             return;
         }
         
-        if let Some((chara_name, ratio)) = Self::convert_character_name(maybe_character_name.clone()) {
+        if let Some((chara_name, ratio)) = SmashbrosResource::convert_character_name(maybe_character_name.clone()) {
             if 1.0 == ratio {
                 self.set_character(player_number, chara_name);
             } else {
@@ -937,53 +944,6 @@ impl SmashbrosData {
     /// 全員分が使用しているキャラクターは確定しているか
     pub fn all_decided_character_name(&self) -> bool {
         (0..self.player_count).collect::<Vec<i32>>().iter().all( |&player_number| self.is_decided_character_name(player_number) )
-    }
-    /// キャラ名が一致したものを返す。そうでない場合は推測して推測率と返す
-    pub fn convert_character_name(maybe_character_name: String) -> Option<(String, f32)> {
-        if smashbros_resource().get().character_list.contains_key(&maybe_character_name) {
-            // 完全一致(公式英名)
-            return Some(( maybe_character_name.clone(), 1.0 ));
-        } else if let Some(chara_name) = smashbros_resource().get().character_list.iter().find(|&c| c.1 == &maybe_character_name) {
-            // 完全一致(公式名)
-            return Some(( chara_name.0.clone(), 1.0 ));
-        } else if let Some(chara_name) = smashbros_resource().get().i18n_convert_list.get(&maybe_character_name) {
-            // i18n(各言語名)
-            return Some(( chara_name.clone(), 1.0 ));
-        } else {
-            fn matcher(chara_list: &Vec<String>, maybe_character_name: &String) -> (String, f32) {
-                let mut max_ratio = 0.0;
-                let mut matcher = SequenceMatcher::new("", "");
-                let mut chara_name = SmashbrosData::CHARACTER_NAME_UNKNOWN;
-                for character_name in chara_list {
-                    matcher.set_seqs(character_name, maybe_character_name);
-                    if max_ratio < matcher.ratio() {
-                        max_ratio = matcher.ratio();
-                        chara_name = character_name;
-                        if 1.0 <= max_ratio {
-                            break;
-                        }
-                    }
-                }
-                return (chara_name.to_string(), max_ratio);
-            }
-            // 完全一致(公式英名)から一番一致率が高い名前を設定する
-            let chara_list = smashbros_resource().get().character_list.clone().into_keys().collect::<Vec<String>>();
-            let (chara_name, ratio) = matcher(&chara_list, &maybe_character_name);
-            if chara_name != Self::CHARACTER_NAME_UNKNOWN {
-                return Some(( chara_name, ratio ));
-            }
-
-            // 完全一致(公式名)から一番一致率が高い名前を設定する
-            let chara_list = smashbros_resource().get().character_list.clone().into_values().collect::<Vec<String>>();
-            let (chara_name, ratio) = matcher(&chara_list, &maybe_character_name);
-            if chara_name != Self::CHARACTER_NAME_UNKNOWN {
-                if let Some(( chara_name, _)) = smashbros_resource().get().character_list.iter().find(|&c| c.1 == &chara_name) {
-                    return Some(( chara_name.clone(), ratio ));
-                }
-            }
-        }
-
-        None
     }
 
     /// プレイヤーのストックの推測
@@ -1133,6 +1093,47 @@ impl SmashbrosData {
         }
 
         Some(true)
+    }
+
+    /// BGM の推測
+    pub fn guess_bgm_name(&mut self, maybe_bgm_name: String) {
+        let (bgm_name, ratio) = match SmashbrosResource::convert_bgm_list(maybe_bgm_name.to_string()) {
+            Some(bgm) => bgm,
+            None => return,
+        };
+
+        if ratio == 1.0 {
+            // 完全一致
+            log::info!("BGM: {}? ==> {} ({:3.2}%)", &maybe_bgm_name, &bgm_name, ratio);
+            self.bgm_name.set(bgm_name);
+            return;
+        }
+
+        let mut guess_count = 1;
+        // BGM は数が多いかつ複雑な文字が多いので、70% 以上は確定率を参考に [(N% - 60%) / 10] 分余計に guess を呼ぶ
+        if 0.7 <= ratio {
+            guess_count += ((ratio - 0.6) * 10.0) as i32;
+        }
+
+        for _ in 0..guess_count as i32 {
+            if self.bgm_name.guess(&bgm_name) {
+                log::info!("BGM: {}? => {} ({:3.2}%)", &maybe_bgm_name, &bgm_name, ratio);
+            }
+        }
+    }
+    /// BGM が確定しているか
+    /// [(試合中 or 試合後) かつ BGM 名が空でない] 場合も一応取れたとして決定に含めておく
+    pub fn is_decided_bgm_name(&self) -> bool {
+        self.bgm_name.is_decided() ||
+        ((self.is_playing_battle() || self.is_finished_battle()) && !self.bgm_name.get().is_empty() )
+    }
+    /// BGM リストに載っていて、許可されている BGM かどうか
+    pub fn is_valid_bgm_name(&self) -> bool {
+        if let Some(bgm_value) = smashbros_resource().get().bgm_list.get(&self.bgm_name.get()) {
+            return *bgm_value;
+        }
+
+        return false;
     }
 
     /// プレイヤーの結果は取得できているか

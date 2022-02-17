@@ -1,8 +1,10 @@
 # 適当な文字列
 battling    = 戦闘中情報
 chara_image = キャラ画像
+disable     = 無効化
 empty       = なし
 exact_match = 完全一致
+folder      = フォルダ
 graph       = グラフ
 next        = 次
 passage     = 推移
@@ -10,7 +12,12 @@ result_max  = 結果取得限界
 search      = 検索
 status      = 状態
 million     = 万
+play        = 再生
+play_list   = 再生リスト
+stock       = 残基
 unselected  = 未選択
+volume      = 音量
+warning     = 警告
 win_rate    = 勝率
 win_lose    = 勝敗
 wins        = 連勝
