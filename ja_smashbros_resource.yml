@@ -1,0 +1,1711 @@
+{
+    "version": "13",
+    "character_list": {
+        "ALEX": "アレックス",
+        "BANJOKAZOOIE": "バンジョー＆カズーイ",
+        "BAYONETTA": "ベヨネッタ",
+        "BLACKPIT": "ブラックピット",
+        "BYLETH": "ベレト/ベレス",
+        "CAPTAINFALCON": "キャプテンファルコン",
+        "CHROM": "クロム",
+        "CLOUD": "クラウド",
+        "DAISY": "デイジー",
+        "DARKSAMUS": "ダークサムス",
+        "DEDEDE": "デデデ",
+        "DIDDYKONG": "ディディーコング",
+        "DONKEYKONG": "ドンキーコング",
+        "DRMARIO": "ドクターマリオ",
+        "DUCKHUNT": "ダックハント",
+        "ENDERMAN": "エンダーマン",
+        "FALCO": "ファルコ",
+        "FOX": "フォックス",
+        "GANONDORF": "ガノンドロフ",
+        "GAOGAEN": "ガオガエン",
+        "GEKKOUGA": "ゲッコウガ",
+        "HERO": "勇者",
+        "HIKARI": "ヒカリ",
+        "HOMURA": "ホムラ",
+        "ICECLIMBER": "アイスクライマー",
+        "IGGY": "イギー",
+        "IKE": "アイク",
+        "INKLING": "インクリング",
+        "JOKER": "ジョーカー",
+        "KAMUI": "カムイ",
+        "KAZUYA": "カズヤ",
+        "KEN": "ケン",
+        "KINGKROOL": "キングクルール",
+        "KIRBY": "カービィ",
+        "KOOPA": "クッパ",
+        "KOOPAJR": "クッパJr",
+        "LARRY": "ラリー",
+        "LEMMY": "レミー",
+        "LINK": "リンク",
+        "LITTLEMAC": "リトルマック",
+        "LUCARIO": "ルカリオ",
+        "LUCAS": "リュカ",
+        "LUCINA": "ルキナ",
+        "LUDWIG": "ルドウィッグ",
+        "LUIGI": "ルイージ",
+        "MARIO": "マリオ",
+        "MARTH": "マルス",
+        "METAKNIGHT": "メタナイト",
+        "MEWTWO": "ミュウツー",
+        "MIIBRAWLER": "Miiブラウラー",
+        "MIIGUNNER": "Miiガンナー",
+        "MIISWORDFIGHTER": "Miiソードファイター",
+        "MINMIN": "ミェンミェン",
+        "MORTON": "モートン",
+        "MRGAMEWATCH": "Mr.ゲーム&ウォッチ",
+        "MURABITO": "むらびと",
+        "NESS": "ネス",
+        "OLIMAR": "ピクミンオリマー",
+        "PACKUNFLOWER": "パックンフラワー",
+        "PACMAN": "パックマン",
+        "PALUTENA": "パルテナ",
+        "PEACH": "ピーチ",
+        "PICHU": "ピチュー",
+        "PIKACHU": "ピカチュウ",
+        "PIKMINALPH": "ピクミン&アルフ",
+        "PIKMINOLIMAR": "ピクミン&オリマー",
+        "PIT": "ピット",
+        "POKEMONTRAINER": "ポケモントレーナー",
+        "PURIN": "プリン",
+        "REFLET": "ルフレ",
+        "RICHTER": "リヒター",
+        "RIDLEY": "リドリー",
+        "ROBOT": "ロボット",
+        "ROCKMAN": "ロックマン",
+        "ROSETTACHIKO": "ロゼッタチコ",
+        "ROY": "ロイ",
+        "ROY(KOOPAJR)": "ロイ",
+        "RYU": "リュウ",
+        "SAMUS": "サムス",
+        "SEPHIROTH": "セフィロス",
+        "SHEIK": "シーク",
+        "SHIZUE": "しずえ",
+        "SHULK": "シュルク",
+        "SIMON": "シモン",
+        "SNAKE": "スネーク",
+        "SONIC": "ソニック",
+        "SORA": "ソラ",
+        "STEVE": "スティーブ",
+        "TERRY": "テリー",
+        "TOONLINK": "トゥーンリンク",
+        "WARIO": "ワリオ",
+        "WENDY": "ウェンディ",
+        "WIIFITTRAINER": "WiiFitトレーナー",
+        "WOLF": "ウルフ",
+        "YOSHI": "ヨッシー",
+        "YOUNGLINK": "こどもリンク",
+        "ZELDA": "ゼルダ",
+        "ZEROSUITSAMUS": "ゼロスーツサムス",
+        "ZOMBIE": "ゾンビ"
+    },
+    "icon_list": {
+        "ALEX": "chara_2_pickel_01.png",
+        "BANJOKAZOOIE": "chara_2_buddy_00.png",
+        "BAYONETTA": "chara_2_bayonetta_00.png",
+        "BLACKPIT": "chara_2_pitb_00.png",
+        "BYLETH": "chara_2_master_01.png",
+        "CAPTAINFALCON": "chara_2_captain_00.png",
+        "CHROM": "chara_2_chrom_00.png",
+        "CLOUD": "chara_2_cloud_00.png",
+        "DAISY": "chara_2_daisy_00.png",
+        "DARKSAMUS": "chara_2_samusd_00.png",
+        "DEDEDE": "chara_2_dedede_00.png",
+        "DIDDYKONG": "chara_2_diddy_00.png",
+        "DONKEYKONG": "chara_2_donkey_00.png",
+        "DRMARIO": "chara_2_mariod_00.png",
+        "DUCKHUNT": "chara_2_duckhunt_00.png",
+        "ENDERMAN": "chara_2_pickel_07.png",
+        "FALCO": "chara_2_falco_00.png",
+        "FOX": "chara_2_fox_00.png",
+        "GANONDORF": "chara_2_ganon_00.png",
+        "GAOGAEN": "chara_2_gaogaen_00.png",
+        "GEKKOUGA": "chara_2_gekkouga_00.png",
+        "HERO": "chara_2_brave_00.png",
+        "HIKARI": "chara_2_elight_00.png",
+        "HOMURA": "chara_2_eflame_00.png",
+        "ICECLIMBER": "chara_2_ice_climber_00.png",
+        "IGGY": "chara_2_koopajr_04.png",
+        "IKE": "chara_2_ike_00.png",
+        "INKLING": "chara_2_inkling_00.png",
+        "JOKER": "chara_2_jack_00.png",
+        "KAMUI": "chara_2_kamui_00.png",
+        "KAZUYA": "chara_2_demon_00.png",
+        "KEN": "chara_2_ken_00.png",
+        "KINGKROOL": "chara_2_krool_00.png",
+        "KIRBY": "chara_2_kirby_00.png",
+        "KOOPA": "chara_2_koopa_00.png",
+        "KOOPAJR": "chara_2_koopajr_00.png",
+        "LARRY": "chara_2_koopajr_01.png",
+        "LEMMY": "chara_2_koopajr_06.png",
+        "LINK": "chara_2_link_00.png",
+        "LITTLEMAC": "chara_2_littlemac_00.png",
+        "LUCARIO": "chara_2_lucario_00.png",
+        "LUCAS": "chara_2_lucas_00.png",
+        "LUCINA": "chara_2_lucina_00.png",
+        "LUDWIG": "chara_2_koopajr_07.png",
+        "LUIGI": "chara_2_luigi_00.png",
+        "MARIO": "chara_2_mario_00.png",
+        "MARTH": "chara_2_marth_00.png",
+        "METAKNIGHT": "chara_2_metaknight_00.png",
+        "MEWTWO": "chara_2_mewtwo_00.png",
+        "MIIBRAWLER": "chara_2_miifighter_00.png",
+        "MIIGUNNER": "chara_2_miigunner_00.png",
+        "MIISWORDFIGHTER": "chara_2_miiswordsman_00.png",
+        "MINMIN": "chara_2_tantan_00.png",
+        "MORTON": "chara_2_koopajr_05.png",
+        "MRGAMEWATCH": "chara_2_gamewatch_00.png",
+        "MURABITO": "chara_2_murabito_00.png",
+        "NESS": "chara_2_ness_00.png",
+        "OLIMAR": "chara_2_pikmin_00.png",
+        "PACKUNFLOWER": "chara_2_packun_00.png",
+        "PACMAN": "chara_2_pacman_00.png",
+        "PALUTENA": "chara_2_palutena_00.png",
+        "PEACH": "chara_2_peach_00.png",
+        "PICHU": "chara_2_pichu_00.png",
+        "PIKACHU": "chara_2_pikachu_00.png",
+        "PIKMINALPH": "chara_2_pikmin_04.png",
+        "PIKMINOLIMAR": "chara_2_pikmin_00.png",
+        "PIT": "chara_2_pit_00.png",
+        "POKEMONTRAINER": "chara_2_ptrainer_00.png",
+        "PURIN": "chara_2_purin_00.png",
+        "REFLET": "chara_2_reflet_00.png",
+        "RICHTER": "chara_2_richter_00.png",
+        "RIDLEY": "chara_2_ridley_00.png",
+        "ROBOT": "chara_2_robot_00.png",
+        "ROCKMAN": "chara_2_rockman_00.png",
+        "ROSETTACHIKO": "chara_2_rosetta_00.png",
+        "ROY": "chara_2_roy_00.png",
+        "ROY(KOOPAJR)": "chara_2_koopajr_02.png",
+        "RYU": "chara_2_ryu_00.png",
+        "SAMUS": "chara_2_samus_00.png",
+        "SEPHIROTH": "chara_2_edge_00.png",
+        "SHEIK": "chara_2_sheik_00.png",
+        "SHIZUE": "chara_2_shizue_00.png",
+        "SHULK": "chara_2_shulk_00.png",
+        "SIMON": "chara_2_simon_00.png",
+        "SNAKE": "chara_2_snake_00.png",
+        "SONIC": "chara_2_sonic_00.png",
+        "SORA": "chara_2_sora_00.png",
+        "STEVE": "chara_2_pickel_00.png",
+        "TERRY": "chara_2_dolly_00.png",
+        "TOONLINK": "chara_2_toonlink_00.png",
+        "WARIO": "chara_2_wario_00.png",
+        "WENDY": "chara_2_koopajr_03.png",
+        "WIIFITTRAINER": "chara_2_wiifit_00.png",
+        "WOLF": "chara_2_wolf_00.png",
+        "YOSHI": "chara_2_yoshi_00.png",
+        "YOUNGLINK": "chara_2_younglink_00.png",
+        "ZELDA": "chara_2_zelda_00.png",
+        "ZEROSUITSAMUS": "chara_2_szerosuit_00.png",
+        "ZOMBIE": "chara_2_pickel_06.png"
+    },
+    "i18n_convert_list": {},
+    "bgm_list": {
+        # 大乱闘スマッシュブラザーズSPECIAL
+        "命の灯火": true,
+        "Lifelight": true,
+        "メニュー": true,
+        "戦場": true,
+        "終点": true,
+        "組み手": true,
+        "勝ちあがり乱闘:壁画": true,
+        "勝ちあがり乱闘:敗北": true,
+        "勝ちあがり乱闘:最終結果": true,
+        "勝ちあがり乱闘:ボーナスステージ": true,
+        "マスターハンド": true,
+        "クレイジーハンド": true,
+        "マスターハンド・クレイジーハンド": true,
+        "光の世界:序章": true,
+        "光の世界:進軍": true,
+        "光の世界:基地": true,
+        "闇の世界": true,
+        "闇の世界:謎の空間": true,
+        "最終決戦": true,
+        "最終決戦:変化後": true,
+        "キーラ": true,
+        "ダーズ": true,
+        "キーラ・ダーズ": true,
+        "メインテーマ ピアノソロ": true,
+        "スピリッツ:ルーレット": true,
+        "スピリッツ:手もち": true,
+        "スピリッツ:名鑑 / アイテム": true,
+        "トーナメント:対戦表": true,
+        "トーナメント:優勝発表": true,
+        "トレーニング": true,
+        "コレクション": true,
+        "ショップ": true,
+        "模擬戦": true,
+        "大観戦": true,
+        # 大乱闘スマッシュブラザーズDX
+        "スマブラDX:オープニング": true,
+        "スマブラDX:オープニング[X]": true,
+        # 大乱闘スマッシュブラザーズX
+        "スマブラX:メインテーマ": true,
+        # 大乱闘スマッシュブラザーズ
+        "スマブラ:How to play": true,
+        # 大乱闘スマッシュブラザーズDX
+        "スマブラDX:How to play": true,
+        # 大乱闘スマッシュブラザーズ
+        "スマブラ:メニュー": true,
+        # 大乱闘スマッシュブラザーズDX
+        "スマブラDX:メニュー": true,
+        "スマブラDX:メニュー[X]": true,
+        "スマブラDX:メニュー2": true,
+        "ボスバトル（スマブラX)": true,
+        # 大乱闘スマッシュブラザーズX
+        "スマブラX:メニュー": true,
+        # 大乱闘スマッシュブラザーズ for Nintendo 3DS/Wii U
+        "スマブラfor:メニュー": true,
+        # 大乱闘スマッシュブラザーズ
+        "キャラクターセレクト（スマブラ）": true,
+        "対戦結果[for]": true,
+        # 大乱闘スマッシュブラザーズDX
+        "戦場（スマブラDX）": true,
+        "戦場（スマブラDX）[for]": true,
+        # 大乱闘スマッシュブラザーズX
+        "戦場（スマブラX）": true,
+        "戦場 Ver.2（スマブラX）": true,
+        # 大乱闘スマッシュブラザーズ for Nintendo 3DS/Wii U
+        "戦場（スマブラfor）": true,
+        # 大乱闘スマッシュブラザーズ
+        "終点（スマブラ）": true,
+        # 大乱闘スマッシュブラザーズDX
+        "終点（スマブラDX）": true,
+        "ギガクッパ": true,
+        # 大乱闘スマッシュブラザーズX
+        "終点（スマブラX）": true,
+        # 大乱闘スマッシュブラザーズ for Nintendo 3DS/Wii U
+        "終点（スマブラfor）": true,
+        "終点 Ver.2（スマブラfor）": true,
+        "組み手（スマブラfor）": true,
+        # 大乱闘スマッシュブラザーズDX
+        "百人組み手": true,
+        "百人組み手2": true,
+        # 大乱闘スマッシュブラザーズX
+        "情け無用組み手": true,
+        # 大乱闘スマッシュブラザーズ
+        "スマブラ:スタッフロール": true,
+        "スマブラ:スタッフロール[X]": true,
+        "スマブラ:スタッフロール[for]": true,
+        # 大乱闘スマッシュブラザーズX
+        "スマブラX:スタッフロール": true,
+        # 大乱闘スマッシュブラザーズ for Nintendo 5DS/Wii U
+        "スマブラfor:スタッフロール": true,
+        # 大乱闘スマッシュブラザーズ
+        "ボーナスゲーム（スマブラ）": true,
+        "メタ・クリスタル": true,
+        "デュエルゾーン": true,
+        "トレーニングモード": true,
+        # 大乱闘スマッシュブラザーズDX
+        "ターゲットをこわせ!（スマブラDX）": true,
+        "メタルバトル": true,
+        "フィギュア名鑑（スマブラDX）": true,
+        "トーナメント1（スマブラDX）": true,
+        "トーナメント2（スマブラDX）": true,
+        "オールスター休憩所（スマブラDX）": true,
+        # 大乱闘スマッシュブラザーズX
+        "ターゲットをこわせ!!（スマブラX）": true,
+        "アドベンチャーマップ（スマブラX）": true,
+        "ステップ:平地（スマブラX）": true,
+        "ステップ:亜空間（スマブラX）": true,
+        "ステップ:亜空間 Ver.3（スマブラX）": true,
+        "ボス戦闘曲1（スマブラX）": true,
+        "ボス戦闘曲2（スマブラX）": true,
+        "ホームランコンテスト": true,
+        "フィギュア名鑑（スマブラX）": true,
+        "シール名鑑 / アルバム / ゲーム年表（スマブラX）": true,
+        "コインシューター": true,
+        "ステージ作り（スマブラX）": true,
+        "トーナメント登録（スマブラX）": true,
+        "トーナメント表（スマブラX）": true,
+        "トーナメント試合終了（スマブラX）": true,
+        "オールスター休憩所（スマブラX）": true,
+        "オンライン練習ステージ（スマブラX）": true,
+        # 大乱闘スマッシュブラザーズ for Nintendo 3DS/Wii U
+        "シンプル:結果（スマブラfor）": true,
+        "シンプル:最終結果（スマブラfor）": true,
+        "シンプル:失敗（スマブラfor）": true,
+        "マスターハンド（スマブラfor）": true,
+        "マスターコア": true,
+        "マスターフォートレス:第1次攻撃": true,
+        "マスターフォートレス:第2次攻撃": true,
+        "マスターサイド:ステージセレクト": true,
+        "フィギュアラッシュ": true,
+        "フィギュアショップ": true,
+        "フィギュア名鑑 / フィギュアディスプレイ（スマブラfor）": true,
+        "リプレイ / アルバム / 戦いの記録（スマブラfor）": true,
+        "オールスター休憩所（スマブラfor）": true,
+        "オンライン練習ステージ（スマブラfor）": true,
+        "すれちがい大乱闘": true,
+        "イベント戦（スマブラfor）": true,
+        "ワールドスマッシュ:マップ": true,
+        # 
+        # マリオ シリーズ
+        # スーパーマリオブラザーズ
+        "地上BGM（スーパーマリオブラザーズ）": true,
+        "地上BGM（スーパーマリオブラザーズ）[64]": true,
+        "地上BGM（スーパーマリオブラザーズ）[DX]": true,
+        "地上BGM（スーパーマリオブラザーズ）[X]": true,
+        "バンド演奏 地上BGM（スーパーマリオブラザーズ）": true,
+        "地上BGM / 地下BGM（スーパーマリオブラザーズ）": true,
+        "地下BGM（スーパーマリオブラザーズ）": true,
+        "水中BGM（スーパーマリオブラザーズ）": true,
+        "スーパーマリオブラザーズ メドレー": true,
+        # スーパーマリオブラザーズ2
+        "スーパーマリオブラザーズ2 メドレー": true,
+        # スーパーマリオUSA
+        "地上BGM（スーパーマリオUSA）": true,
+        "ローリングヒルズA": true,
+        "ボスBGM（スーパーマリオUSA）": true,
+        # スーパーマリオブラザーズ3
+        "地上BGM（スーパーマリオブラザーズ3）[DX]": true,
+        "地上BGM（スーパーマリオブラザーズ3）": true,
+        "スーパーマリオブラザーズ3 メドレー": true,
+        "砦のボス（スーパーマリオブラザーズ3）": true,
+        "飛行船BGM（スーパーマリオブラザーズ3）": true,
+        "魔王クッパ（スーパーマリオブラザーズ3）": true,
+        # スーパーマリオランド
+        "地下BGM（スーパーマリオランド）": true,
+        # スーパーマリオワールド
+        "スーパーマリオワールド:タイトル / エンディング": true,
+        "地上BGM（スーパーマリオワールド）": true,
+        "スーパーマリオワールド メドレー": true,
+        # スーパーマリオワールド/スーパーマリオブラザーズ3
+        "お城BGM / 砦のボス（マリオワールド / マリオ3）": true,
+        # スーパーマリオワールド
+        "砦ボス戦（スーパーマリオワールド）": true,
+        # スーパーマリオ64
+        "スーパーマリオ64:メインテーマ": true,
+        "スライダー": true,
+        # スーパーマリオサンシャイン
+        "ドルピックタウン": true,
+        "リコハーバー": true,
+        # Newスーパーマリオブラザーズ
+        "New スーパーマリオブラザーズ:メインテーマ": true,
+        # スーパーマリオギャラクシー
+        "Super Mario Galaxy": true,
+        "エッグプラネット": true,
+        "天文台のロゼッタ / チコのテーマ": true,
+        "ウィンドガーデン": true,
+        "チャンピオンシップロード": true,
+        # スーパーマリオギャラクシー2
+        "Theme of SMG2": true,
+        "星船はゆく": true,
+        "空島": true,
+        "マグマモンスター": true,
+        "新銀河帝国": true,
+        "宿命の決戦": true,
+        # スーパーマリオ3Dランド/スーパーマリオブラザーズ
+        "地上BGM / 水中BGM（スーパーマリオ3Dランド）": true,
+        # Newスーパーマリオブラザーズ2
+        "アスレチック（Newスーパーマリオブラザーズ2）": true,
+        "地上BGM（Newスーパーマリオブラザーズ2）": true,
+        # NewスーパーマリオブラザーズU
+        "地上BGM（NewスーパーマリオブラザーズU）": true,
+        # スーパーマリオ3Dワールド
+        "スーパーベルの丘": true,
+        "スーパータワーの決戦2": true,
+        # スーパーマリオメーカー
+        "スーパーマリオメーカー:タイトル": true,
+        # スーパーマリオオデッセイ
+        "ダイナフォー": true,
+        "ニュードンク・シティ": true,
+        "Jump Up,Super Star!": true,
+        "スチームガーデン": true,
+        "月の地下洞くつ": true,
+        "Break Free（Lead the Way）": true,
+        # マリオ&ルイージRPG2
+        "ザラザラ砂漠": true,
+        "マリオ&ルイージRPG3!!!": true,
+        "ちょっと強い奴らに要注意!?": true,
+        "イン・ザ・ファイナル": true,
+        # ペーパーマリオスーパーシール/ペーパーマリオRPG
+        "ペーパーマリオ メドレー": true,
+        # マリオ&ルイージRPG4 ドリームアドベンチャー
+        "TRY AND TRY!": true,
+        # マリオ&ルイージRPG ペーパーマリオMIX
+        "急げば間に合う!": true,
+        "トリオで大混戦!!!": true,
+        "アタック・エンド・ラン!": true,
+        # ペーパーマリオ カラースプラッシュ
+        "バトル!（ペーパーマリオ カラースプラッシュ）": true,
+        # マリオ&ルイージRPG1 DX
+        "こらがボコスカバトル!": true,
+        # マリオパーティ9
+        "はちゃめちゃ!": true,
+        # マリオパーティ アイランドツアー
+        "マリオパーティ アイランドツアー:タイトル": true,
+        "ロケットレースギャラクシー": true,
+        # マリオテニスGC/マリオゴルフ ファミリーツアー
+        "マリオテニス / マリオゴルフ": true,
+        # マリオゴルフ ワールドツアー
+        "ワールドツアー": true,
+        # マリオテニス ウルトラスマッシュ
+        "スタジアムのテーマ（マリオテニス ウルトラスマッシュ）": true,
+        # マリオスポーツ スーパースターズ
+        "キングダムスタジアム:夜": true,
+        "カントリーフィールド:先攻側": true,
+        # マリオテニス エース
+        "マリオテニス エースのテーマ": true,
+        "スタジアムのテーマ（マリオテニス エース）": true,
+        # ルイージマンション
+        "ルイージマンション:メインテーマ": true,
+        "ルイージマンション:メインテーマ[X]": true,
+        # ルイージマンション/ルイージマンション2
+        "ルイージマンション シリーズメドレー": true,
+        # ルイージマンション2
+        "探索 -ウラメ～シ屋敷Ver.- (instrumental)": true,
+        # マリオブラザーズ
+        "マリオブラザーズ": true,
+        # ドクターマリオ
+        "Fever": true,
+        "Chill[X]": true,
+        "Chill[for]": true,
+        # マリオペイント
+        "マリオペイント メドレー": true,
+        # 進め!キノピオ隊長
+        "旅立ちのひっこ抜き峠": true,
+        "火ふき山の主": true,
+        # マリオvs.ドンキーコング みんなでミニランド
+        "マリオvs.ドンキーコング みんなでミニランド:タイトル": true,
+        # 
+        # マリオカート
+        # スーパーマリオカート
+        "マリオサーキット（スーパーマリオカート）": true,
+        # マリオカート64
+        "ルイージサーキット（マリオカート64）": true,
+        # マリオカート ダブルダッシュ!!
+        "レインボーロード（マリオカート ダブルダッシュ!!）": true,
+        # マリオカートDS
+        "ワルイージピンボール（マリオカートDS）": true,
+        # マリオカートWii
+        "キノコキャニオン（マリオカートWii）": true,
+        # マリオカート7
+        "サーキット（マリオカート7）": true,
+        "レインボーロード（マリオカート7）": true,
+        # マリオカート7/マリオカートDS/マリオカートアドバンス
+        "レインボーロード シリーズメドレー": true,
+        # マリオカート8
+        "マリオカートスタジアム（マリオカート8）": true,
+        "マリオサーキット（マリオカート8）": true,
+        "スカイガーデン（マリオカート8）": true,
+        "レインボーロード（マリオカート8）": true,
+        # エキサイトバイク
+        "エキサイトバイク（マリオカート8）": true,
+        # マリオカート8
+        "ドラドンロード": true,
+        "ツルツルツイスター": true,
+        # 
+        # ドンキーコング
+        "ドンキーコング:オープニング": true,
+        "ドンキーコング リターンズ": true,
+        "ドンキーコング リターンズ【ドンキーファミリーボーカル】": true,
+        "ドンキーコング": true,
+        "25m BGM": true,
+        # ドンキーコング/ドンキーコングJR.
+        "ドンキーコング / ドンキーコングJR. メドレー": true,
+        # スーパードンキーコング
+        "THE MAP PAGE / BONUS LEVEL": true,
+        "JUNGLE LEVEL[64]": true,
+        "JUNGLE LEVEL[DX]": true,
+        "JUNGLE LEVEL[X]": true,
+        "JUNGLE LEVEL Jazz Style[for]": true,
+        "JUNGLE LEVEL Ethnic Style[for]": true,
+        "バナナジャングル": true,
+        "ふみふみラビリンス": true,
+        "The Ice Cave": true,
+        "Funky Kong Page": true,
+        # スーパードンキーコング/スーパードンキーコング2
+        "ラトリーに大へんしん": true,
+        # スーパードンキーコング
+        "THE PIRATE SHIP": true,
+        "KING K.ROOL / SHIP DECK2": true,
+        # スーパードンキーコング2
+        "とげとげタルめいろ": true,
+        "けっせん!キャプテンクルール": true,
+        # ドンキーコング64
+        "モンキーラップ": true,
+        # ドンキーコング ジャングルビート
+        "嵐の丘の戦い": true,
+        # ドンキーコング ジャングルクライマー
+        "ボス2（ドンキーコング ジャングルクライマー）": true,
+        # ドンキーコング リターンズ
+        "モグリャーのこうじげんば": true,
+        "スリル!ギアフライト": true,
+        # ドンキーコング トロピカルフリーズ
+        "マングローブのいりえ": true,
+        # 
+        # ゼルダの伝説
+        "ゼルダの伝説:タイトル": true,
+        "地上BGM（ゼルダの伝説）": true,
+        "地上BGM（ゼルダの伝説）[64]": true,
+        "地上BGM（ゼルダの伝説）[DX]": true,
+        "地上BGM（ゼルダの伝説）[X]": true,
+        "地上BGM/地下BGM（ゼルダの伝説）[for]": true,
+        # ゼルダの伝説/ゼルダの伝説 時のオカリナ
+        "ゼルダの伝説 メドレー": true,
+        # ゼルダの伝説
+        "デスマウンテンBGM": true,
+        # リンクの冒険
+        "神殿": true,
+        "大神殿 / 神殿": true,
+        # ゼルダの伝説 神々のトライフォース
+        "表の地上": true,
+        "裏の地上[X]": true,
+        "裏の地上[for]": true,
+        "裏の山と森": true,
+        # ゼルダの伝説 夢をみる島
+        "タルタル高原": true,
+        # ゼルダの伝説 時のオカリナ
+        "時のオカリナメドレー": true,
+        "ハイラル平原メインテーマ": true,
+        "サリアの歌": true,
+        "サリアの歌 / 中ボス": true,
+        "嵐の歌": true,
+        "ゲルドの谷": true,
+        # ゼルダの伝説 ムジュラの仮面
+        "タルミナ平原": true,
+        # ゼルダの伝説 風のタクト
+        "大海原 / メニューセレクト": true,
+        "竜の島": true,
+        "モルド・ゲイラ": true,
+        # ゼルダの伝説 4つの剣+
+        "青の巫女の村": true,
+        # ゼルダの伝説 トワイライトプリンセス
+        "ゼルダの伝説 トワイライトプリンセス:メインテーマ": true,
+        "傷だらけのミドナ": true,
+        "忘れられた里": true,
+        # ゼルダの伝説 大地の汽笛/ゼルダの伝説
+        "汽車フィールド その2": true,
+        # ゼルダの伝説 スカイウォードソード
+        "女神の詩": true,
+        # ゼルダの伝説 神々のトライフォース2
+        "ハイラルメインテーマ": true,
+        "ユガ戦　-ハイラル城": true,
+        "ロウラルメインテーマ": true,
+        # ゼルダの伝説 トライフォース3銃士
+        "ゼルダの伝説 トライフォース3銃士:メインテーマ": true,
+        "森林エリア（ゼルダの伝説 トライフォース3銃士）": true,
+        # ゼルダの伝説シリーズ
+        "Nintendo Switch Presentation 2017 Trailer BGM": true,
+        # ゼルダの伝説 ブレス オブ ザ ワイルド
+        "ゼルダの伝説 ブレス オブ ザ ワイルド:メインテーマ": true,
+        "カッシーワのテーマ": true,
+        "ハイラル城（屋外）": true,
+        "厄災ガノン戦・第二形態": true,
+        # 
+        # メトロイド
+        "メトロイド:タイトル": true,
+        "ブリンスタ[64]": true,
+        "ブリンスタ[DX]": true,
+        "ブリンスタ[X]": true,
+        "ブリンスタ深部": true,
+        "ブリンスタ深部[DX]": true,
+        "ノルフェア": true,
+        "脱出": true,
+        "メトロイド:エンディング": true,
+        # スーパーメトロイド
+        "vs.リドリー": true,
+        "vs.リドリー[X]": true,
+        "宇宙戦士 サムスアランのテーマ": true,
+        # メトロイド フュージョン
+        "Sector 1": true,
+        # メトロイドプライム
+        "メトロイドプライム:オープニング / メニュー": true,
+        "vs.パラサイトクイーン": true,
+        "vs.メタリドリー": true,
+        # メトロイドプライム2 ダークエコーズ
+        "マルチプレイ（メトロイドプライム2 ダークエコーズ）": true,
+        # メトロイドプライム ハンターズ
+        "PsychoBits": true,
+        # METROID Other M
+        "拘束の死闘": true,
+        "灼熱の溶岩魚": true,
+        "宿敵リドリー": true,
+        # メトロイドプライム フェデレーションフォース
+        "メトロイドプライム フェデレーションフォース:メインテーマ": true,
+        # メトロイド サムスリターンズ
+        "ラヴァケイブス（メトロイド サムスリターンズ）": true,
+        "BOSS4（メトロイド サムスリターンズ）": true,
+        "リザルト（メトロイド サムスリターンズ）": true,
+        # 
+        # ヨッシー
+        # スーパーマリオワールド
+        "アスレチック（スーパーマリオワールド）": true,
+        # スーパーマリオ ヨッシーアイランド
+        "ヨッシーアイランド[X]": true,
+        "ヨッシーアイランド[for]": true,
+        "アスレチック（ヨッシーアイランド）": true,
+        # ヨッシーストーリー
+        "ヨッシーのうた[64]": true,
+        "ヨッシーのうた[DX]": true,
+        "ヨッシーのおはなし": true,
+        # キャッチ!タッチ!ヨッシー!
+        "おはなばたけ": true,
+        # ヨッシーアイランドDS
+        "こうやのテーマ": true,
+        # ヨッシーNewアイランド
+        "ヨッシーNewアイランド:メインテーマ": true,
+        "しゃくねつのせかい": true,
+        # ヨッシーウールワールド
+        "ヨッシーウールワールド:メインテーマ": true,
+        # 
+        # 星のカービィ
+        "グリーングリーンズ[DX]": true,
+        "グリーングリーンズ[for]": true,
+        "星のカービィ 原曲メドレー": true,
+        "デデデ大王のテーマ[X]": true,
+        "デデデ大王のテーマ[for]": true,
+        # 星のカービィ/星のカービィ スーパーデラックス
+        "星のカービィ:STAFF ROLL": true,
+        # 星のカービィシリーズ
+        "ボスのテーマメドレー（星のカービィシリーズ）": true,
+        # 星のカービィ 夢の泉の物語
+        "アイスクリームアイランド": true,
+        "バタービルディング[X]": true,
+        "バタービルディング[for]": true,
+        # 星のカービィ スーパーデラックス
+        "激突!グルメレース": true,
+        "激突!グルメレース[64]": true,
+        "激突!グルメレース[DX]": true,
+        "洞窟大作戦": true,
+        "メタナイトの逆襲": true,
+        "vs.マルク": true,
+        # 星のカービィ64
+        "ポップスター": true,
+        "ゼロツー戦": true,
+        # カービィのエアライド
+        "森のステージ": true,
+        "ヴァレリオン": true,
+        "コルダ": true,
+        "シティトライアル": true,
+        "伝説のエアライドマシン": true,
+        # 星のカービィ 鏡の大迷宮
+        "森・自然エリア": true,
+        # 星のカービィ 参上!ドロッチェ団
+        "ドロッチェ団のテーマ": true,
+        # 星のカービィWii
+        "ぼうけんのはじまり": true,
+        "森をぬけて": true,
+        "スカイタワー": true,
+        "デンジャラスディナー": true,
+        "CROWNED": true,
+        # 星のカービィ トリプルデラックス
+        "浮遊大陸の花畑": true,
+        "狂花水月": true,
+        "この星をかけた魂の戦い": true,
+        # デデデ大王のデデデでデンZ
+        "CROWNED:Ver.2": true,
+        # 星のカービィ ロボボプラネット
+        "キカイのせかいのだいぼうけん": true,
+        "桃球発進!ロボボアーマー": true,
+        # カービィ バトルデラックス!
+        "カービィ バトルデラックス!:メインテーマ": true,
+        # 星のカービィ スターアライズ
+        "友ときずなの戦い2": true,
+        # 
+        # スターフォックス
+        "スターフォックス:メインテーマ": true,
+        "コーネリア（スターフォックス）": true,
+        "スペース・アマダ": true,
+        "スターフォック メドレー": true,
+        # スターフォックス64
+        "スターフォックス64:メインテーマ[64]": true,
+        "スターフォックス64:メインテーマ[DX]": true,
+        "スターフォックス64:メインテーマ[X]": true,
+        "スターウルフ": true,
+        "スターウルフ[X]": true,
+        "スターウルフ / セクターZ[for]": true,
+        "エリア6（スターフォックス64）": true,
+        "エリア6Ver.2（スターフォックス65）": true,
+        # スターフォックス64/スターフォックス コマンド
+        "エリア6 / ミサイル撃墜ミッション": true,
+        # スターフォックス アサルト
+        "戦闘宙域": true,
+        "氷原突破せよ": true,
+        # スターフォックスゼロ
+        "惑星コーネリア（スターフォックス ゼロ）": true,
+        "セクターΩ宙域": true,
+        "惑星コーネリア再び（スターフォックス ゼロ）": true,
+        # 
+        # ポケットモンスター
+        # ポケットモンスター赤・緑
+        "ポケットモンスター赤・緑:メインテーマ[64]": true,
+        "ポケットモンスター赤・緑:メインテーマ[DX]": true,
+        "ポケットモンスター赤・緑:メインテーマ[X]": true,
+        "トキワへの道-マサラより / ニビシティ（ポケットモンスター赤・緑）": true,
+        "ポケモンセンター（ポケットモンスター赤・緑）": true,
+        "ポケモンジム / 進化（ポケットモンスター赤・緑）": true,
+        "ポケットモンスター赤・緑 メドレー": true,
+        # ポケットモンスター金・銀
+        "ポケットモンスター金・銀 メドレー": true,
+        # ポケットモンスター ルビー・サファイア
+        "戦闘!野生ポケモン（ポケットモンスター ルビー・サファイア）": true,
+        "チャンピオンロード（ポケットモンスター ルビー・サファイア）": true,
+        # ポケットモンスター ダイヤモンド・パール
+        "戦闘!野生ポケモン（ポケットモンスター ダイヤモンド・パール）": true,
+        "戦闘!ギンガ団": true,
+        "209ばんどうろ（ポケットモンスター ダイヤモンド・パール）": true,
+        "戦闘!ディアルガ・パルキア / やりのはしら": true,
+        "戦闘!チャンピオン / チャンピオンシロナ": true,
+        # ポケットモンスター ブラック・ホワイト
+        "10ばんどうろ（ポケットモンスター ブラック・ホワイト）": true,
+        "Nの城": true,
+        "戦闘!ゼクロム・レシラム": true,
+        # ポケットモンスター ブラック2・ホワイト2
+        "23ばんどうろ（ポケットモンスター ブラック2・ホワイト2）": true,
+        # ポケットモンスター X・Y
+        "戦闘!野生ポケモン（ポケットモンスター X・Y）": true,
+        "戦闘!トレーナー（ポケットモンスター X・Y）": true,
+        "戦闘!フレア団": true,
+        "ミアレシティ": true,
+        "チャンピオンロード（ポケットモンスター X・Y）": true,
+        "戦闘!チャンピオン（ポケットモンスター X・Y）": true,
+        # ポケットモンスター オメガルビー・アルファサファイア
+        "決戦!ダイゴ": true,
+        "戦闘!伝承者ヒガナ": true,
+        # ポケットモンスター サン・ムーン
+        "戦闘!野生ポケモン（ポケットモンスター サン・ムーン）": true,
+        "戦闘!トレーナー（ポケットモンスター サン・ムーン）": true,
+        "戦闘!しまキング・しまクイーン": true,
+        "戦闘!グラジオ": true,
+        "戦闘!四天王 / 戦闘!ソルガレオ・ルナアーラ": true,
+        "頂上決戦!": true,
+        # 
+        # F-ZERO
+        "MUTE CITY": true,
+        "MUTE CITY[DX]": true,
+        "MUTE CITY[X]": true,
+        "MUTE CITY[for]": true,
+        "BIG BLUE": true,
+        "BIG BLUE[DX]": true,
+        "SAND OCEAN": true,
+        "DEATH WIND": true,
+        "F-ZERO メドレー": true,
+        "SILENCE": true,
+        "PORT TOWN": true,
+        "RED CANYON": true,
+        "WHITE LAND": true,
+        "WHITE LANDⅡ": true,
+        "FIRE FIELD": true,
+        # F-ZERO X
+        "CAR SELECT": true,
+        "DREAM CHASER": true,
+        "DEVIL’S CALL IN YOUR HEART": true,
+        "CLIMB UP!AND GET THE LAST CHANCE!": true,
+        # F-ZERO GX
+        "BRAIN CLEANER": true,
+        "SHOTGUN KISS": true,
+        "PLANET COLORS": true,
+        # 
+        # MOTHER
+        "Pollyanna（I Believe In You）": true,
+        "Humoresque Of A Little Doｇ": true,
+        "マジカント": true,
+        "マジカント[for]": true,
+        "Bein’Friend": true,
+        "SNOWMAN": true,
+        # MOTHER2 ギーグの逆襲
+        "オネットのテーマ / ウインターズのテーマ": true,
+        "フォーサイド": true,
+        "フォーサイド[DX]": true,
+        "スマイルズ アンド ティアーズ": true,
+        # MOTHER3
+        "MOTHER3 愛のテーマ": true,
+        "いわれなきリベンジ / ブッコワシ賛歌": true,
+        "ユートピアでしょ?!": true,
+        "ポーキーのテーマ": true,
+        # 
+        # ファイアーエムブレム
+        # ファイアーエムブレム 暗黒竜と光の剣
+        "ファイアーエムブレムのテーマ": true,
+        "ファイアーエムブレムのテーマ（Ver.Heroes）": true,
+        "Code Name:F.E.": true,
+        "Lords-邂逅.": true,
+        "ストーリー5 出会い": true,
+        "暗黒竜 メドレー": true,
+        # ファイアーエムブレム 暗黒竜と光の剣/封印の剣/トラキア776
+        "闘技場 シリーズメドレー": true,
+        # ファイアーエムブレム 外伝
+        "解放への勇進": true,
+        "ミラの加護とともに（セリカマップ1）": true,
+        "戦い1（ファイアーエムブレム 外伝）": true,
+        "Lords - 決戦": true,
+        "神に抗う者よ": true,
+        # ファイアーエムブレム 紋章の謎
+        "この旗の下に": true,
+        "進撃": true,
+        "ファイアーエムブレム 紋章の謎 メドレー": true,
+        # ファイアーエムブレム 紋章の謎/聖魔の光石/聖戦の系譜/トラキア776
+        "出会いのテーマ シリーズメドレー": true,
+        # ファイアーエムブレム 聖戦の系譜
+        "失意の果て": true,
+        # ファイアーエムブレム 封印の剣
+        "あの空の向こうに（ロイの旅立ち）": true,
+        "Winning Road～ロイの希望": true,
+        # ファイアーエムブレム 烈火の剣
+        "攻撃（烈火の剣）": true,
+        # ファイアーエムブレム 聖魔の光石
+        "進撃準備": true,
+        # ファイアーエムブレム 蒼炎の軌跡
+        "Victory is Near": true,
+        "Crimea Army Sortie": true,
+        "Against The Dark Knight": true,
+        "Powerhungry Fool": true,
+        # ファイアーエムブレム 暁の女神
+        "絆永久に": true,
+        "忠義尽くさん": true,
+        "決起の時": true,
+        # ファイアーエムブレム 覚醒
+        "序幕～炎": true,
+        "使命～炎": true,
+        "宿命～炎": true,
+        "遠征～炎": true,
+        "「I」～為": true,
+        # ファイアーエムブレムif
+        "if～ひとり思う～": true,
+        # Fire Emblem Fates
+        "Lost in Thoughts All Alone": true,
+        # ファイアーエムブレムif
+        "if～ひとり思う～[for]": true,
+        # ファイアーエムブレム ヒーローズ
+        "ギアアップフォー": true,
+        # ファイアーエムブレム Echoes もうひとりの英雄王
+        "亡国の王者": true,
+        "王の子は煉獄に踊る": true,
+        # ファイアーエムブレム 風花雪月
+        "ファイアーエムブレム 風花雪月 メインテーマ": true,
+        # Fire Emblem: Three Houses
+        "Fire Emblem: Three Houses Main Theme": true,
+        # ファイアーエムブレム 風花雪月
+        "フォドラの暁風": true,
+        "鷲獅子たちの蒼穹": true,
+        "天裂く流星": true,
+        "野望の地平": true,
+        "天と地の境界": true,
+        "交わらぬ道": true,
+        "この世界の頂で": true,
+        "フレスベルグの少女～風花雪月～": true,
+        # Fire Emblem: Three Houses
+        "The Edge of Dawn (Seasons of Warfare)": true,
+        # 
+        # ゲーム&ウォッチ
+        "フラットゾーン": true,
+        "フラットゾーン2": true,
+        # 
+        # パルテナの鏡
+        # 光神話 パルテナの鏡
+        "パルテナの鏡:タイトル": true,
+        "パルテナの鏡 原曲メドレー": true,
+        "冥府界": true,
+        "地上界": true,
+        # 新・光神話 パルテナの鏡
+        "ボス戦 1（新・光神話 パルテナの鏡）": true,
+        "マグナのテーマ": true,
+        "ブラックピットのテーマ": true,
+        "星賊船": true,
+        "ハデスのテーマ": true,
+        "初期化爆弾の恐怖": true,
+        "雷雲の庭園": true,
+        "銀河の聖域": true,
+        "崩壊エンジェランド": true,
+        # 
+        # ワリオ
+        # メイド イン ワリオ
+        "メイド イン ワリオ": true,
+        "メイドイン ワリオ メドレー": true,
+        # さわるメイドインワリオ
+        "アシュリーのテーマ[X]": true,
+        # WarioWare:Touched!
+        "Ashley’s Song": true,
+        # さわるメイドインワリオ
+        "アシュリーのテーマ[for]": true,
+        "マイクがスキ☆スキ": true,
+        # WarioWare:Touched!
+        "Mike’s Song": true,
+        # まわるメイドインワリオ
+        "こちら☆モナピザ": true,
+        # WarioWare:Twisted!
+        "Mona Pizza’s Song": true,
+        # ワリオランドシェイク
+        "いせき（ワリオランドシェイク）": true,
+        # ゲーム&ワリオ
+        "ゲーマー": true,
+        # 
+        # ピクミン
+        "ピクミン:メインテーマ": true,
+        "希望の森": true,
+        "ステージクリア / タイトル（ピクミン）": true,
+        "環境音": true,
+        # ピクミン2
+        "ワールドマップ（ピクミン2）": true,
+        "ステージセレクト（ピクミン2）": true,
+        # ピクミン3
+        "再会の花園": true,
+        "ミッションモード（ピクミン3）": true,
+        # Hey!ピクミン
+        "ゆらめく湖のヌシ": true,
+        "空を切りさく稲妻": true,
+        "雪山を抜けて": true,
+        "希望のかけら": true,
+        # 
+        # どうぶつの森
+        "どうぶつの森:タイトル": true,
+        "ゆけ!けけライダー": true,
+        # おいでよ どうぶつの森
+        "おいでよ どうぶつの森:タイトル": true,
+        "おいでよ どうぶつの森:タイトル[X]": true,
+        "午前2時（おいでよ どうぶつの森）": true,
+        "役場とタヌキ商店（おいでよ どうぶつの森）": true,
+        "純喫茶”ハトの巣”（おいでよ どうぶつの森）": true,
+        # 街へいこうよ どうぶつの森/おいでよ どうぶつの森
+        "街の広場 / タイトル（街へいこうよ どうぶつの森 / おいでよ どうぶつの森）": true,
+        # とびだせ どうぶつの森
+        "フィールド19時（晴）/ 商店街（とびだせ どうぶつの森）": true,
+        "かっぺいの歌": true,
+        "ツアー（とびだせ どうぶつの森）": true,
+        "コトブキランド メドレー": true,
+        "けけアイドル": true,
+        # どうぶつの森 ハッピーホームデザイナー
+        "どうぶつの森 ハッピーホームデザイナー:タイトル": true,
+        "完成デモ": true,
+        # どうぶつの森
+        "アーバンけけ": true,
+        "けけウェスタン": true,
+        "ニューオリンズそんぐ": true,
+        "けけのロケンロール": true,
+        "ユーロビート": true,
+        "ペルーのうた": true,
+        # 
+        # Wii Fit
+        "Wii Fit:メインメニュー": true,
+        "燃焼フープダンス": true,
+        "リズムボクシング": true,
+        "踏み台ダンス": true,
+        "ヨガ": true,
+        # Wii Fit Plus
+        "スケボー フリーモード": true,
+        "いたずらモグウェイ": true,
+        "Wii Fit Plus メドレー": true,
+        # Wii Fit U
+        "トレーニングメニュー（Wii Fit U)": true,
+        "リュージュ": true,
+        # 
+        # パンチアウト!!
+        # PUNCH-OUT!!（FC)
+        "マイナーサーキット": true,
+        "ランニング / カウントダウン": true,
+        "ワールドサーキット": true,
+        # PUNCH-OUT!!（Wii)
+        "PUNCH-OUT!!（Wii):タイトル": true,
+        # 
+        # ゼノブレイド
+        "敵との対峙": false,
+        "戦闘!（ゼノブレイド）": false,
+        "ガウル平原": false,
+        "ガウル平原 / 夜": false,
+        "ゼノブレイド メドレー": false,
+        "行く手を阻む者": false,
+        "名を冠する者たち": false,
+        "機の律動": false,
+        # ゼノブレイド2
+        "ゼノブレイド2 メドレー": false,
+        "アヴァリティア商会": false,
+        "嵐の船上": false,
+        "Exploration": false,
+        "交わる剣": false,
+        "Incoming!": false,
+        "グーラ領": false,
+        "戦闘!!（ゼノブレイド2）": false,
+        "Tiger!Tiger!": false,
+        "死闘イーラ": false,
+        "行く手を阻む者たち": false,
+        "Counterattack": false,
+        "さらに名を冠する者たち": false,
+        "ドライバー VS": false,
+        "スペルビア帝国　～赤土を駆け抜けて～": false,
+        "雷轟!アルティメット": false,
+        "それでも、前へ進め!": false,
+        "マルベーニ　～神の代行者～": false,
+        "戦闘!!!イーラ": false,
+        # 
+        # スプラトゥーン
+        "Splattack!": true,
+        "Ink or Sink": true,
+        "Seaskape": true,
+        "Kraken Up": true,
+        "Metalopod": true,
+        "Quick Start": true,
+        "Now or Never!": true,
+        "Now or Never!（スプラトゥーン）": true,
+        "Now or Never!（スプラトゥーン2）": true,
+        "キミ色に染めて": true,
+        "イマ・ヌラネバー!（スプラトゥーン）": true,
+        "イマ・ヌラネバー!（スプラトゥーン2）": true,
+        "Octoweaponry": true,
+        "I am Octavio": true,
+        "シオカラ節": true,
+        "トキメキ☆ボムラッシュ": true,
+        # スプラトゥーン2
+        "Inkoming!": true,
+        "Rip Entry": true,
+        "Undertow": true,
+        "Don’t Slip": true,
+        "Endolphin Surge": true,
+        "フルスロットル・テンタクル": true,
+        "リップル・リフレイン": true,
+        "レッド・ホット・エゴイスト": true,
+        "囂々": true,
+        # 
+        # メタルギア
+        "THEME OF TARA": false,
+        # メドレー2 ソリッドスネーク
+        "THEME OF SOLID SNAKE": false,
+        # メタルギア ソリッド
+        "Cavern": false,
+        "Encounter": false,
+        # メタルギア ソリッド2 サンズ オブ リバティ
+        "Yell ”Dead Cell”": false,
+        # メタルギア ソリッド3 スネークイーター
+        "Snake Eater": false,
+        "Snake Eater（Instrumental）": false,
+        "Battle In The Base": false,
+        # メタルギア ソリッド4 ガンズ オブ ザ パトリオット
+        "MGS4～愛のテーマ～": false,
+        # メタルギア ソリッド ポータブル OPS
+        "Calling To The Night": false,
+        # メタルギア ソリッド ピースウォーカー
+        "METAL GEAR SOLID PEACE WALKER MAIN THEME": false,
+        # 
+        # ソニック
+        # ソニック・ザ・ヘッジホッグ（1991）
+        "Green Hill Zone": false,
+        "Scrap Brain Zone": false,
+        # ソニック・ザ・ヘッジホッグ2
+        "Emerald Hill Zone": false,
+        # ソニック・ザ・ヘッジホッグCD
+        "Sonic Boom": false,
+        # ソニック・ザ・ヘッジホッグ3
+        "Angel Island Zone": false,
+        # ソニックR
+        "Super Sonic Racing": false,
+        # ソニックアドベンチャー
+        "Open Your Heart": false,
+        # ソニックアドベンチャー2
+        "Live & Learn": false,
+        "Escape From The City": false,
+        # ソニックヒーローズ
+        "Sonic Heroes": false,
+        # ソニック・ザ・ヘッジホッグ（2006）
+        "His World（THEME OF SONIC THE HEDGEHOG～2006 E3 VERSION～）": false,
+        # ソニックと秘密のリング
+        "Seven Rings In Hand": false,
+        # ソニックと暗黒の騎士
+        "Knight Of The Wind": false,
+        # ソニック カラーズ
+        "Reach For The Stars": false,
+        # ソニック ジェネレーションズ 白の時空
+        "Rooftop Run": false,
+        # ソニック ロストワールド
+        "Wonder World": false,
+        "Windy Hill-Zone 1": false,
+        # ソニックマニア
+        "Lights,Camera,Action!-Studiopolis Zone Act 1": false,
+        # ソニックフォース
+        "Fist Bump": false,
+        "Sunset Heights": false,
+        # 
+        # ロックマン
+        "CUTMAN STAGE": false,
+        "GUTSMAN STAGE": false,
+        "ICEMAN STAGE": false,
+        "BOMBMAN STAGE": false,
+        "FIREMAN STAGE": false,
+        # ロックマン2 Dr.ワイリーの謎
+        "ロックマン2 メドレー": false,
+        "METALMAN STAGE": false,
+        "AIRMAN STAGE": false,
+        "QUICKMAN STAGE": false,
+        "CRASHMAN STAGE": false,
+        "FLASHMAN STAGE": false,
+        "WOODMAN STAGE": false,
+        # ロックマン3 Dr.ワイリーの最期!?
+        "HARDMAN STAGE": false,
+        "TOPMAN STAGE": false,
+        "SNAKEMAN STAGE": false,
+        "SPARKMAN STAGE": false,
+        "SHADOWMAN STAGE": false,
+        # ロックマン4 新たなる野望!!
+        "ロックマン4 メドレー": false,
+        # ロックマン5 ブルースの罠!?
+        "GRAVITYMAN STAGE": false,
+        "NAPALMMAN STAGE": false,
+        "DARKMAN STAGE": false,
+        # ロックマン9 野望の復活!!
+        "Flash In The Dark(Dr.Wily Stage 1）": false,
+        "We’re The Robots(Dr.Wily Stage 2）": false,
+        # ロックマン
+        "ロックマン 原曲メドレー": false,
+        # ロックマン2 Dr.ワイリーの謎
+        "ロックマン2 原曲メドレー": false,
+        # ロックマン3 Dr.ワイリーの最期!?
+        "ロックマン3 原曲メドレー": false,
+        # ロックマン4/ロックマン5/ロックマン6
+        "ロックマン4～6 原曲メドレー": false,
+        # ロックマンX
+        "OPENING STAGE": false,
+        # ロックマンX5
+        "X vs ZERO": false,
+        # ロックマンゼロ
+        "ゼロ（Theme of ZERO（from Rockman X））": false,
+        # 流星のロックマン
+        "Shooting Strr": false,
+        # 
+        # パックマン
+        "パックマン": false,
+        "パックマン（クラブMIX)": false,
+        # パックマニア
+        "PAC-MAN’S PARK / BLOCK TOWN": false,
+        # ギャラガ
+        "ギャラガ メドレー": false,
+        # マッピー
+        "マッピー メドレー": false,
+        # リブルラブル
+        "リブルラブル 原曲メドレー": false,
+        # メトロクロス
+        "メトロクロス原曲メドレー": false,
+        # スカイキッド/スカイキッドDX
+        "スカイキッド 原曲メドレー": false,
+        # ドラゴンスピリット
+        "エリア1（ドラゴンスピリット）": false,
+        # ナムコアーケード
+        "ナムコアーケード’80s 原曲メドレー1": false,
+        "ナムコアーケード’80s 原曲メドレー2": false,
+        # 
+        # ストリートファイター
+        # ストリートファイターⅡ
+        "Ryu Stage": false,
+        "Ken Stage": false,
+        "Guile Stage": false,
+        "Balrog Stege": false,
+        "Player Select Type A": false,
+        "Ryu Stage Type A": false,
+        "Ken Stage Type A": false,
+        "E.Honda Stage Type A": false,
+        "Chun-Li Stage Type A": false,
+        "Blanka Stage Type A": false,
+        "Zungief Stage Type A": false,
+        "Guile Stage Type A": false,
+        "Dhalsim Stage Type A": false,
+        "M.Bison Stage Type A": false,
+        "Balrog Stage Type A": false,
+        "Sagat Stage Type A": false,
+        "Vega Stage Type A": false,
+        # スーパーストリートファイターⅡ
+        "T.Hawk Stage Type A": false,
+        "Fei Long Stage Type A": false,
+        "Dee Jay Stage Type A": false,
+        "Cammy Stage Type A": false,
+        "Player Select Type B": false,
+        "Ryu Stage Type B": false,
+        "Ken Stage Type B": false,
+        "E.Honda Stage Type B": false,
+        "Chun-Li Stage Type B": false,
+        "Blanka Stage Type B": false,
+        "Zungief Stage Type B": false,
+        "Guile Stage Type B": false,
+        "Dhalsim Stage Type B": false,
+        "M.Bison Stage Type B": false,
+        "Balrog Stage Type B": false,
+        "Sagat Stage Type B": false,
+        "Vega Stage Type B": false,
+        "T.Hawk Stage Type B": false,
+        "Fei Long Stage Type B": false,
+        "Dee Jay Stage Type B": false,
+        "Cammy Stage Type B": false,
+        # 
+        # ファイナルファンタジーⅦ
+        "闘う者達": false,
+        "更に闘う者達": false,
+        # ファイナルファンタジーⅦ
+        "オープニング～爆破ミッション": false,
+        # ファイナルファンタジーⅦ　アドベントチルドレン
+        "闘う者達[FFⅦ AC Version]": false,
+        "更に闘う者達[FFⅦ AC Version]": false,
+        # ファイナルファンタジーⅦ
+        "エアリスのテーマ": false,
+        "F.F.Ⅶメインテーマ": false,
+        "J-E-N-O-V-A": false,
+        "星降る峡谷": false,
+        "片翼の天使": false,
+        # ファイナルファンタジーⅦ　アドベントチルドレン
+        "再臨:片翼の天使～Advent:One-Winged Angel～": false,
+        # 
+        # ベヨネッタ
+        "Theme Of Bayonetta -Mysterious Destiny（instrumental）": false,
+        "One Of A Kind": false,
+        "Riders Of The Light": false,
+        "Let’s Hit The Climax!": false,
+        "Red&Black": false,
+        "After Burner（∞ Climax Mix)": false,
+        "友よ": false,
+        "Let’s Dance,Boys!": false,
+        # ベヨネッタ2
+        "Theme Of Bayonetta2 -Tomorrow Is Mine（instrumental）": false,
+        "The Legend Of Aesir": false,
+        "Time For The Climax!": false,
+        # 
+        # 悪魔城ドラキュラ
+        "Vampire Killer": false,
+        "Starker / Wicked Child": false,
+        "Out of Time": false,
+        "Nothing to Lose": false,
+        "Black Night": false,
+        # ドラキュラⅡ 呪いの封印
+        "Bloody Tears / Monster Dance": false,
+        "Dwelling of Doom": false,
+        # 悪魔城ドラキュラ（AC)
+        "十字架を胸に": false,
+        "夜まで待てない": false,
+        # 悪魔城伝説
+        "Beginning": false,
+        "Mad Forest": false,
+        "Aquarius": false,
+        # 悪魔城ドラキュラ（SFC)
+        "シモン・ベルモンドのテーマ": false,
+        "シモン・ベルモンドのテーマ(THE ARCADE）": false,
+        # 悪魔城ドラキュラX 血の輪廻
+        "乾坤の血族": false,
+        "Slash": false,
+        "幻想的舞曲": false,
+        # バンパイアキラー
+        "Iron-Blue Intention": false,
+        # 悪魔城ドラキュラX 月下の夜想曲
+        "ドラキュラ城": false,
+        "黄金の舞曲": false,
+        "失われた彩画": false,
+        "悲境の貴公子": false,
+        # 悪魔城ドラキュラ Circle of the moon
+        "Awake": false,
+        # Castlevania 暁月の円舞曲
+        "荒城回廊": false,
+        # Castlevania
+        "真実の嘆き": false,
+        # 悪魔城ドラキュラ 蒼月の十字架
+        "漆黒の進攻": false,
+        "闇夜の激突": false,
+        # 悪魔城ドラキュラ ギャラリー オブ ラビリンス
+        "切り裂かれた静寂": false,
+        "Hail from the Past": false,
+        "Jail of Jewel": false,
+        # 悪魔城ドラキュラ 奪われた刻印
+        "黄昏の聖痕": false,
+        "漆黒の翼": false,
+        # 月風魔伝
+        "行け!月風魔": true,
+        # 
+        # ペルソナ
+        # ペルソナ5
+        "Last Surprise": false,
+        "Beneath the Mask": false,
+        "Wake Up,Get Up,Get Out There": false,
+        "Rivers In the Desert": false,
+        "Our Beginning": false,
+        # ペルソナ4
+        "Reach Out To The Truth": false,
+        "I'll Fece Myself": false,
+        "Time To Make History": false,
+        # ペルソナ3
+        "Mass Destruction": false,
+        "全ての人の魂の戦い": false,
+        # 共通
+        "全ての人の魂の詩": false,
+        # 
+        # ドラゴンクエスト
+        # ドラゴンクエストⅢ そして伝説へ…
+        "冒険の旅": false,
+        "戦闘のテーマ（ドラゴンクエストⅢ）": false,
+        # ドラゴンクエストⅣ 導かれし者たち
+        "戦闘（ドラゴンクエストⅣ）": false,
+        "馬車のマーチ": false,
+        # ドラゴンクエストⅧ 空と海と大地と呪われし姫君
+        "雄叫びをあげて": false,
+        "大平原のマーチ": false,
+        # ドラゴンクエストⅪ 過ぎ去りし時を求めて S
+        "勇者は征く": false,
+        "ひるまぬ勇気": false,
+        # 
+        # バンジョーとカズーイの大冒険
+        "バンジョーとカズーイの大冒険:タイトル": false,
+        "クルクルやまのふもと": false,
+        "マンボまうんてん": false,
+        "おたからザクザクびーち": false,
+        "フローズンズンやま": false,
+        "ゴビバレーさばく": false,
+        "マッドナイトまんしょん": false,
+        # バンジョーとカズーイの大冒険2
+        "VSクランゴ": false,
+        "VSミスターパッチ": false,
+        "VSウーハッハだいおう": false,
+        # 
+        # 餓狼伝説
+        # 餓狼伝説～宿命の戦い～
+        "ハレマー教カポエレ派戦いの歌（信じるものは救われる）:餓狼伝説": false,
+        "海は知っている:餓狼伝説": false,
+        # 餓狼伝説2～新たなる戦い～
+        "クリキントン:餓狼伝説2": false,
+        "クリキントン風:KOF XIV": false,
+        "パスタ:餓狼伝説2": false,
+        "タイ南部に伝えたい新しい詩:餓狼伝説2": false,
+        "ターくんと北ピー:餓狼伝説2": false,
+        "ソウルに行こう!:餓狼伝説2": false,
+        "ロンドンマーチ:餓狼伝説2": false,
+        "働く闘牛士:餓狼伝説2": false,
+        # 餓狼伝説SPECIAL
+        "Duck Dub Dub（ダックよおまえもか）:餓狼伝説SPECIAL": false,
+        "ギースにしょうゆ:餓狼伝説SPECIAL": false,
+        "ギースにしょうゆ -KOF XIV ver.-": false,
+        # 餓狼伝説3
+        "Big Shot!:餓狼伝説3": false,
+        # 餓狼伝説 WILD AMBITION
+        "11th Street:餓狼伝説 WILD AMBITION": false,
+        "176th Street:KOF ’99": false,
+        # THE KING OF FIGHTERS '94
+        "ね!:KOF ’94": false,
+        # THE KING OF FIGHTERS '95
+        "DESERT REQUIEM ～Operation02UM～:KOF 2002 UM": false,
+        # THE KING OF FIGHTERS '96
+        "ESAKA!!:KOF 2002 UM": false,
+        "嵐のサキソフォン:KOF ’96": false,
+        # THE KING OF FIGHTERS '99
+        "KD-0079+:KOF 2002 UM": false,
+        "W.W.Ⅲ -KOF XIV ver.-": false,
+        # THE KING OF FIGHTERS 2000
+        "Terry115:KOF 2000": false,
+        # THE KING OF FIGHTERS Ⅺ
+        "Street Dancer:KOF Ⅺ": false,
+        "New Order -KOF XIV ver.-": false,
+        # THE KING OF FIGHTERS 2002 UNLIMITED MATCH
+        "Undercover:KOF 2002 UM": false,
+        "Cutting Edge:KOF 2002 UM": false,
+        # THE KING OF FIGHTERS XIII
+        "The Second Joker:KOF XIII": false,
+        "Esaka Continues...:KOF XIII": false,
+        "Wild Street:KOF XIII": false,
+        "Tama a Bad Boy:KOF XIII": false,
+        "KDD-0063:KOF XIII": false,
+        # THE KING OF FIGHTERS XIV
+        "Yappari ESAKA:KOF XIV": false,
+        "Departure from South Town:KOF XIV": false,
+        # ASO（Armored Scrum Object）
+        "Theme of SYD:ASO（Armored Scrum Object）": false,
+        # 怒
+        "IKARI -KOF XIV ver.-": false,
+        # アテナ
+        "森の世界:アテナ": false,
+        # サイコ・ソルジャー
+        "サイコ・ソルジャーのテーマ": false,
+        "サイコ・ソルジャーのテーマ 海外版": false,
+        # 龍虎の拳
+        "ART OF FIGHT:龍虎の拳": false,
+        "龍虎の拳 Ver.230000000.0:餓狼伝説SPECIAL": false,
+        # サムライスピリッツ
+        "鮪:サムライスピリッツ": false,
+        "自然の宴:サムライスピリッツ": false,
+        "大地:サムライスピリッツ": false,
+        # メタルスラッグ
+        "Main Theme from Metal Slug:メタルスラッグ": false,
+        # メタルスラッグ / メタルスラッグ2 / メタルスラッグ3
+        "ASSAULT THEME:メタルスラッグ1～3": false,
+        # メタルスラッグ1～6
+        "FINAL ATTACK:メタルスラッグ1～6": false,
+        # メタルスラッグ2
+        "JUDGMENT:メタルスラッグ2": false,
+        # メタルスラッグ3
+        "蒼海の牙 -Dr.モローの島-:メタルスラッグ3": false,
+        # 
+        # ARMS
+        "ARMSグランプリ公式テーマ": true,
+        "スプリングスタジアム": true,
+        "ラーメンボウル": true,
+        "リボンリング": true,
+        "ニンジャカレッジ": true,
+        "マミーホスピタル": true,
+        "スクラップヤード": true,
+        "ツインシネマ": true,
+        "バスタービーチ": true,
+        "スネークパーク": true,
+        "DNA ラボ": true,
+        "スカイアリーナ": true,
+        "キャンディーストリート": true,
+        "ビョ・ビヨンポス": true,
+        "スパーリングリング": true,
+        "コンフィデンシャル": true,
+        "VSヘッドロック": true,
+        "ARMSグランプリ ファイナルバトル": true,
+        # 
+        # Minecraft
+        # Minecraft Dungeons
+        "Halland / Dalarna": true,
+        # Minecraft Earth
+        "Earth": true,
+        # Minecraft
+        "Clockwork Crafter": true,
+        "Toys on a Tear": true,
+        "Dance of the Blocks": true,
+        "Glide": true,
+        # Minecraft Dungeons
+        "The Arch-Illager": true,
+        # 
+        # 鉄拳
+        "Marine Stadium,Japan": true,
+        "Chicago,U.S.A": true,
+        "Kyoto,Japan": true,
+        # 鉄拳2
+        "Heihachi Mishima,the king of Iron Fist": true,
+        "Kazuya Mishima,Devil Kazuya": true,
+        "Emotionless Passion": true,
+        # 鉄拳3
+        "Attract -Embu- / Character Select": true,
+        "Hwoarang": true,
+        "Jin Kazama": true,
+        "Heihachi Mishima": true,
+        # 鉄拳タッグトーナメント
+        "Opening Movie": true,
+        "Jin Stage": true,
+        # 鉄拳4
+        "Kitsch": true,
+        "Bit Crusher": true,
+        # 鉄拳5
+        "Red Hot Fist": true,
+        "Moonlit Wilderness": true,
+        "Poolside": true,
+        # 鉄拳5 DARK RESURRECTION
+        "Snow Castle": true,
+        "Into Nirvana": true,
+        "RESURRECTION": true,
+        # 鉄拳6
+        "Ethno evening": true,
+        "YUKI": true,
+        "Only one Fight": true,
+        # 鉄拳6 BLOODLINE REBELLION
+        "Dist thins out": true,
+        "Karma": true,
+        "Arisa": true,
+        "Yodeling in meadow hill": true,
+        # 鉄拳タッグトーナメント2
+        "Abyss of Time": true,
+        "Plucking Tjlips": true,
+        "Landscape Under the Ghost-Kaminano": true,
+        # 鉄拳レボリューション
+        "New World Order": true,
+        "No Easy Way Out": true,
+        # 鉄拳7
+        "Heat Haze Shadow": true,
+        "Dojo（Japanese Style Mix）": true,
+        "DUOMO DI SIRIO 1st": true,
+        "Moonsiders 1st": true,
+        "Desperate struggle": true,
+        "Aloneness": true,
+        # 
+        # キングダム ハーツ
+        # キングダム ハーツ HD1.5リミックス
+        "Night of Fate": false,
+        "Destiny’s Force": false,
+        "Shrouding Dark Cloud": false,
+        "Hand in Hand": false,
+        "Blast Away! -Gummi Ship Ⅱ-": false,
+        "Hollow Bastion": false,
+        "Scherzo Di Notte": false,
+        # キングダム ハーツ HD2.5リミックス
+        "Fragments of Sorrow": false,
+        # キングダム ハーツ
+        "Destati": false,
+        "Dearly Beloved -Swing Version-": false,
+        # 
+        # その他
+        # ダックハント
+        "ダックハント メドレー": true,
+        "ダックハント メドレー[for]": true,
+        # バルーンファイト
+        "バルーンファイト メドレー": true,
+        "バルーントリップ[X]": true,
+        "バルーントリップ[for]": true,
+        # クルクルランド
+        "クルクルランド": true,
+        # アイスクライマー
+        "アイスクライマー[DX]": true,
+        "アイスクライマー[X]": true,
+        # レッキングクルー
+        "レッキングクルー メドレー": true,
+        "レッキングクルー メドレー[for]": true,
+        "レッキングクルー 原曲メドレー": true,
+        "BGM B:パワーアップ（レッキングクルー）": true,
+        "ブロックセット/ジャイロセット": true,
+        "ブロック&ジャイロ": true,
+        # マッハライダー
+        "マッハライダー": true,
+        # ファミリーコンピュータ
+        "ファミコン メドレー": true,
+        # 謎の村雨城
+        "謎の村雨城 メドレー": true,
+        "道中面（謎の村雨城）": true,
+        # ふぁみこんむかし話 新・鬼ケ島
+        "新・鬼ヶ島 メドレー": true,
+        # ファミコングランプリⅡ 3Dホットラリー
+        "3Dホットラリー:タイトル": true,
+        # テトリス
+        "テトリス TypeA": true,
+        "テトリス TypeB": true,
+        # ふぁみこんむかし話 遊遊記
+        "遊遊記 メドレー": true,
+        # パイロットウィングス
+        "ライトプレーン": true,
+        "ライトプレーン[for]": true,
+        "ライトプレーン（ボーカルMIX）[for]": true,
+        # パイロットウィングス リゾート
+        "ジェット機": true,
+        "ペダルグライダー": true,
+        # X（エックス）
+        "トンネルシーン（X（エックス））": true,
+        # X-RETURNS
+        "トンネルシーン（X-RETURNS）": true,
+        # パネルでポン
+        "リップのテーマ": true,
+        # カルドセプト
+        "カルドセプト": true,
+        # カルドセプト リボルト
+        "リボルト -希望への決起-": false,
+        "好敵手 バトル": false,
+        # テン・エイティ スノーボーディング
+        "Golden Forest": true,
+        # 黄金の太陽 失われし時代
+        "戦闘シーン / 最終ボス戦（黄金の太陽）": true,
+        # 黄金の太陽 漆黒なる夜明け
+        "The Weyard": true,
+        # モンスターハンター
+        "英雄の証～4Version": false,
+        "咆哮 / リオレウス": false,
+        # ピクトチャット
+        "ピクトチャット": true,
+        # エレクトロプランクトン
+        "エレクトロプランクトン": true,
+        # ニンテンドッグス
+        "シャワーBGM": true,
+        "シャワーBGM[for]": true,
+        "シャワーBGM（ボーカルMIX）[for]": true,
+        # 脳を鍛える大人のDSトレーニング
+        "脳を鍛える大人のDSトレーニング": true,
+        # もっと脳を鍛える大人のDSトレーニング
+        "もっと脳を鍛える大人のDSトレーニング:メニュー": true,
+        # やわらかあたま塾
+        "やわらかあたま塾:タイトル": true,
+        # バテン・カイトスⅡ始まりの翼と神々の嗣子
+        "The Valedictory Elegy": true,
+        # しゃべる!DSお料理ナビ
+        "しゃべる!DSお料理ナビ": true,
+        # 超操縦メカ MG
+        "マリオネーションギア": true,
+        # Wiiショッピングチャンネル
+        "Wiiショッピングチャンネル": true,
+        "似顔絵チャンネル": true,
+        # 似顔絵広場
+        "似顔絵チャンネル": true,
+        # はじめてのWii
+        "牛ダッシュ": true,
+        # Wii Sports
+        "Wii Sports:タイトル": true,
+        # Wii Sports/Wii Sports Resort
+        "Wii Sports シリーズメドレー": true,
+        # Wii Sports Resort
+        "Wii Sports Resort:タイトル": true,
+        "Wii Sports Resort": true,
+        "Wii Sports Resort Ver.2": true,
+        # Wii Sports Club
+        "Wii Sports Club:タイトル": true,
+        "テニス・トレーニング": true,
+        "ベースボール・トレーニング": true,
+        # エキサイト トラック
+        "エキサイト トラック": true,
+        # ソーマブリンガー
+        "襲撃（ソーマブリンガー）": false,
+        # ヘラクレスの栄光～魂の証明～
+        "ヘラクレスの栄光～魂の証明～": true,
+        "石垣秀基/尾上秀樹": true,
+        # 大合奏!バンドブラザーズDX
+        "PERFORMANCE": true,
+        # リズム天国ゴールド
+        "ブルーバーズ": true,
+        # みんなのリズム天国
+        "さる時計": true,
+        # リズム天国 ザ・ベスト+
+        "フルーツバスケット": true,
+        # キャプテン★レインボー
+        "あさっての情": true,
+        # トモダチコレクション 新生活/トモダチコレクション
+        "島の昼": true,
+        "島の昼[for]": true,
+        # 絵心教室DS
+        "スワンレッスンBGM": true,
+        # ARゲームス
+        "ドラゴンの戦い": true,
+        # すれちがい伝説/すれちがい伝説Ⅱ
+        "すれちがい伝説 / すれちがい伝説Ⅱ メドレー": true,
+        # すれちがい伝説Ⅱ
+        "世界を救え!勇者よ!": true,
+        "やみの王": true,
+        # STEELDIVER SUBWARS
+        "希望を胸に": true,
+        # いきものづくり クリエイトーイ
+        "いきものづくり クリエイトーイ メドレー": true,
+        # ひらり 桜侍
+        "ボス1（ひらり 桜侍）": true,
+        # ザ・ローリング・ウエスタン 最後の用心棒
+        "ザ・ローリング・ウエスタン 最後の用心棒": true,
+        # ザ・デッドヒートブレイカーズ
+        "開拓地の戦い": true,
+        # わがままファッション GIRLS MODE よくばり宣言!
+        "わがままファッション GIRLS MODE よくばり宣言!": true,
+        "ファッションショー ポップ": true,
+        # Girls Mode 4 スター☆スタイリスト
+        "Ring Dong Dang!": false,
+        # Nintendo Land
+        "Nintendo Land:タイトルBGM": true,
+        "Nintendo Land メドレー": true,
+        # The Wonderful 101
+        "ST01 出動!The Wonderful 100!": true,
+        "ジャギンガ 天体殲滅機動形態": true,
+        # Wii Party U
+        "結果発表（Wii Party U）": true,
+        # ファミコンリミックス2
+        "ファミコンリミックス2:タイトル": true,
+        # カセキホリダー ムゲンギア
+        "バトル開始（カセキホリダー ムゲンギア）": true,
+        # バッジとれ～るセンター
+        "バッジとれ～るセンター:タイトル": true,
+        "バイトウサギのテーマ": true,
+        # 引ク出ス ヒッパランド
+        "はじめてコーナー": true,
+        # Code Name:S.T.E.A.M リンカーンVSエイリアン
+        "HOT SPOT_2": true,
+        # Miitopia
+        "決戦!ボス": true,
+        "決戦!真超魔王": true,
+        # Tank Troopers（タンクトゥルーパーズ）
+        "ガレージ": true,
+        # いっしょにチョキッと スニッパーズ
+        "はちゃめちゃデスク": true,
+        # Ever Oasis 精霊とタネビトの蜃気楼
+        "夜明けの砂漠": true,
+        "カオスとの激闘": true,
+        # UNDERTALE
+        "MEGALOVANIA": true,
+        # Cuphead
+        "烈花の如く": true,
+        # シャンティ:ハーフ・ジーニー ヒーロー
+        "Burning Town": true
+    }
+}

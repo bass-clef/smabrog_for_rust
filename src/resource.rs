@@ -55,11 +55,16 @@ impl WrappedFluentLanguageLoader {
     pub fn get(&mut self) -> &FluentLanguageLoader {
         if self.lang.is_none() {
             let loader = fluent_language_loader!();
-
-            loader.load_fallback_language(&Localizations)
-                .expect("Error while loading fallback language");
-        
-            self.lang = Some(loader);
+            
+            match loader.load_fallback_language(&Localizations) {
+                Ok(()) => self.lang = Some(loader),
+                Err(_e) => {
+                    self.lang = Some(FluentLanguageLoader::new(
+                        "ja-JP",
+                        LanguageIdentifier::from_bytes("ja-JP".as_bytes()).expect("lang parsing failed"),
+                    ));
+                },
+            }
         }
         self.lang.as_mut().unwrap()
     }
@@ -97,7 +102,7 @@ impl Default for SmashbrosResourceText {
     }
 }
 impl SmashbrosResourceText {
-    const FILE_PATH: &'static str = "smashbros_resource.json";
+    const FILE_PATH: &'static str = "smashbros_resource.yml";
     fn new() -> Self {
         let lang = lang_loader().get().current_language().language.clone();
         let path = format!("{}_{}", lang.as_str(), SmashbrosResourceText::FILE_PATH);
@@ -119,7 +124,7 @@ impl SmashbrosResourceText {
         let file = std::fs::File::open(&path).unwrap();
         let reader = BufReader::new(file);
         
-        match serde_json::from_reader::<_, Self>(reader) {
+        match serde_yaml::from_reader::<_, Self>(reader) {
             Ok(config) => {
                 config
             },
@@ -259,6 +264,45 @@ impl BattleHistory {
         return None;
     }
 
+    /// コレクションから戦歴情報を削除
+    pub fn delete_data(&mut self, data: &SmashbrosData) -> anyhow::Result<()> {
+        use mongodb::bson::doc;
+        use crate::data::SmashbrosDataTrait;
+        let id = match data.get_id() {
+            Some(id) => id,
+            None => {
+                log::error!("[delete err] failed delete_data. id is None.");
+                return Err(anyhow::anyhow!("failed delete_data. id is None."));
+            },
+        };
+
+        let database = self.db_client.database("smabrog-db");
+        let collection_ref = database.collection("battle_data_col").clone();
+
+        match async_std::task::block_on(async {
+            async_std::future::timeout(
+                std::time::Duration::from_secs(5),
+                collection_ref.delete_one(
+                    doc!{ "_id": mongodb::bson::oid::ObjectId::with_string(&id).unwrap() },
+                    None
+                )
+            ).await
+        }) {
+            Ok(result) => {
+                if 1 == result.as_ref().ok().unwrap().deleted_count {
+                    return Ok(());
+                }
+                log::error!("[delete err] failed delete data {:?}.\ndata: [{:?}]", result, data);
+            },
+            Err(_e) => {    // async_std::future::TimeoutError( _private: () )
+                log::error!("delete timeout. please restart smabrog.");
+                return Err(anyhow::anyhow!("delete timeout. please restart smabrog."));
+            },
+        }
+
+        Err(anyhow::anyhow!("failed delete data."))
+    }
+
     /// battle_data コレクションから戦歴情報を 直近 result_max 件 取得
     pub fn find_data_limit(&mut self, result_max: i64) -> Option<Vec<SmashbrosData>> {
         self.find_data(
@@ -317,44 +361,47 @@ pub fn battle_history() -> &'static mut WrappedBattleHistory {
 }
 
 
+pub enum SoundType {
+    Bgm, File, Beep,
+}
 use rodio::{
     OutputStream,
     Sink,
     Source,
 };
 /// BGM の再生とフォルダを管理するクラス
-pub struct BgmManager {
+pub struct SoundManager {
     bgm_list: Vec<String>,
-    current_bgm: Option<usize>,
-    sink: Sink,
-    stream: OutputStream,
+    current_bgm_index: usize,
+    current_file_index: usize,
+    current_beep_index: usize,
+    sinks_list: Vec<(Sink, OutputStream)>,
     volume: f32,
 }
-impl Default for BgmManager {
+impl Default for SoundManager {
     fn default() -> Self { Self::new() }
 }
-impl BgmManager {
+impl SoundManager {
     pub fn new() -> Self {
-        let (stream, stream_handle) = OutputStream::try_default().unwrap();
-        let sink = Sink::try_new(&stream_handle).unwrap();
-
         Self {
             bgm_list: Vec::new(),
-            current_bgm: None,
-            sink,
-            stream,
+            current_bgm_index: 0,
+            current_file_index: 0,
+            current_beep_index: 0,
+            sinks_list: Vec::new(),
             volume: 1.0,
         }
     }
 
-    fn play_source<I: rodio::Sample + Send, S: Source<Item = I> + Send + 'static>(&mut self, source: S) {
+    fn play_source<I: rodio::Sample + Send, S: Source<Item = I> + Send + 'static>(&mut self, source: S) -> usize {
         let (stream, stream_handle) = OutputStream::try_default().unwrap();
-        let sink = Sink::try_new(&stream_handle).unwrap();
-        self.sink = sink;
-        self.stream = stream;
+        let sinks = Sink::try_new(&stream_handle).unwrap();
+        sinks.set_volume(self.volume);
+        sinks.append(source);
+        
+        self.sinks_list.push((sinks, stream));
 
-        self.sink.set_volume(self.volume);
-        self.sink.append(source);
+        self.sinks_list.len() - 1
     }
 
     // path を精査して、BGM リストを作成する
@@ -393,42 +440,131 @@ impl BgmManager {
     }
 
     /// 現在再生中のリストを破棄する
-    pub fn stop(&mut self) {
-        self.sink.stop();
-        self.current_bgm = None;
+    pub fn stop(&mut self, sound_type: Option<SoundType>) {
+        match sound_type {
+            Some(SoundType::Bgm) => {
+                let sinks = self.sinks_list.remove(self.current_bgm_index);
+                sinks.0.stop();
+                self.current_bgm_index = 0;
+            },
+            Some(SoundType::File) => {
+                let sinks = self.sinks_list.remove(self.current_file_index);
+                sinks.0.stop();
+                self.current_file_index = 0;
+            },
+            Some(SoundType::Beep) => {
+                let sinks = self.sinks_list.remove(self.current_beep_index);
+                sinks.0.stop();
+                self.current_beep_index = 0;
+            },
+            None => {
+                while let Some(sinks) = self.sinks_list.pop() {
+                    sinks.0.stop();
+                }
+                self.current_bgm_index = 0;
+                self.current_file_index = 0;
+                self.current_beep_index = 0;
+            },
+        }
+    }
+
+    /// ファイルから再生する (make_id が false だと SoundType::File になる)
+    pub fn play_file(&mut self, file_path: String, make_id: bool) -> Option<usize> {
+        if !make_id && self.is_playing(Some(SoundType::File)) {
+            self.stop(Some(SoundType::File));
+        }
+        let path = std::path::PathBuf::from(file_path);
+        let source = rodio::Decoder::new(std::fs::File::open(path).unwrap()).unwrap();
+
+        if make_id {
+            Some(self.play_source(source))
+        } else {
+            self.current_file_index = self.play_source(source);
+
+            None
+        }
     }
 
     /// BGM リストの index を再生する
-    pub fn play(&mut self, index: usize) {
-        if self.is_playing() {
-            self.stop();
+    pub fn play_bgm(&mut self, index: usize) {
+        if self.is_playing(Some(SoundType::Bgm)) {
+            self.stop(Some(SoundType::Bgm));
         }
-        self.current_bgm = Some(index);
-        let path = std::path::PathBuf::from(self.bgm_list[index].clone());
-        let source = rodio::Decoder::new(std::fs::File::open(path).unwrap()).unwrap();
-        self.play_source(source);
-    }
-
-    /// BGM リストの一曲をランダムで再生する
-    pub fn play_random(&mut self) {
-        use rand::Rng;
-        let mut rng = rand::thread_rng();
-        self.play(rng.gen_range( 0..self.bgm_list.len() ));
+        log::info!("play_bgm: {:?}", &self.bgm_list[index]);
+        self.current_bgm_index = self.play_file(self.bgm_list[index].clone(), true).unwrap();
     }
 
     /// ビープ音を鳴らす
     pub fn beep(&mut self, freq: f32, duration: std::time::Duration) {
+        if self.is_playing(Some(SoundType::Beep)) {
+            self.stop(Some(SoundType::Beep));
+            self.current_file_index = 0;
+        }
         let source = rodio::source::SineWave::new(freq).take_duration(duration);
-        self.play_source(source);
+        self.current_beep_index = self.play_source(source);
+    }
+
+    /// BGM リストの一曲をランダムで再生する
+    pub fn play_bgm_random(&mut self) {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        self.play_bgm(rng.gen_range( 0..self.bgm_list.len() ));
     }
 
     /// 音量の変更
     pub fn set_volume(&mut self, volume: f32) {
         self.volume = volume;
+        for sinks in self.sinks_list.iter_mut() {
+            sinks.0.set_volume(self.volume);
+        }
     }
 
     /// 再生中かどうか
-    pub fn is_playing(&self) -> bool {
-        !self.sink.empty()
+    pub fn is_playing(&self, sound_type: Option<SoundType>) -> bool {
+        match sound_type {
+            Some(SoundType::Bgm) => if let Some(sinks) = self.sinks_list.get(self.current_bgm_index) {
+                return !sinks.0.empty();
+            },
+            Some(SoundType::File) => if let Some(sinks) = self.sinks_list.get(self.current_file_index) {
+                return !sinks.0.empty();
+            },
+            Some(SoundType::Beep) => if let Some(sinks) = self.sinks_list.get(self.current_beep_index) {
+                return !sinks.0.empty();
+            },
+            None => for sinks in self.sinks_list.iter() {
+                if !sinks.0.empty() {
+                    return true;
+                }
+            },
+        }
+
+        false
     }
+}
+/// シングルトンで SoundManager を保持するため
+pub struct WrappedSoundManager {
+    sound_manager: Option<SoundManager>,
+}
+impl WrappedSoundManager {
+    // 参照して返さないと、unwrap() で move 違反がおきてちぬ！
+    pub fn get(&mut self) -> &SoundManager {
+        if self.sound_manager.is_none() {
+            self.sound_manager = Some(SoundManager::default());
+        }
+        self.sound_manager.as_ref().unwrap()
+    }
+
+    // mut 版
+    pub fn get_mut(&mut self) -> &mut SoundManager {
+        if self.sound_manager.is_none() {
+            self.sound_manager = Some(SoundManager::default());
+        }
+        self.sound_manager.as_mut().unwrap()
+    }
+}
+static mut BGM_MANAGER: WrappedSoundManager = WrappedSoundManager {
+    sound_manager: None,
+};
+pub fn sound_manager() -> &'static mut WrappedSoundManager {
+    unsafe { &mut BGM_MANAGER }
 }

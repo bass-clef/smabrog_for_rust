@@ -2,7 +2,7 @@
 battling    = Battle Info
 chara_image = Chara Image
 disable     = Disable
-empty       = Empty
+empty       = ---
 exact_match = Exact
 folder      = Folder
 graph       = Graph
@@ -21,6 +21,13 @@ warning     = Warning
 win_rate    = Win Rate
 win_lose    = Win/Lose
 wins        = Wins
+
+# グラフのラベル
+losing      = Losing
+not_good    = Not Good
+just        = Just
+good        = Good
+winning     = Winning
 
 # 戦闘に関する文字列
 battle_information  = Battle Information

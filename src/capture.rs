@@ -644,27 +644,33 @@ impl CaptureFromEmpty {
 
 
 /// コーデックを保持するクラス
-struct Codec {
-    backend: i32,
+pub struct Codec {
+    pub backend: i32,
     fourcc: i32,
     file_name: Option<String>,
 }
 impl AsRef<Codec> for Codec {
     fn as_ref(&self) -> &Codec { self }
 }
+impl Default for Codec {
+    fn default() -> Self {
+        Self {
+            backend: videoio::CAP_ANY,
+            fourcc: -1,
+            file_name: None,
+        }
+    }
+}
 impl Codec {
     /// インストールされているコーデックを照合して初期化
-    pub fn find_codec() -> Self {
+    pub fn find_codec(file_name: Option<String>) -> Self {
         log::info!("find installed codec... {:?}", videoio::get_writer_backends());
         let fourcc_list = [b"HEVC", b"H265", b"X264", b"FMP4", b"ESDS", b"MP4V", b"MJPG"];
         let extension_list = ["mp4", "avi"];
+        let file_name = file_name.unwrap_or("temp".to_string());
+        let mut full_file_name = format!("{}.avi", file_name);
         let mut writer: videoio::VideoWriter = videoio::VideoWriter::default().unwrap();
-        let mut codec = Self {
-            backend: videoio::CAP_ANY,
-            fourcc: -1,
-            file_name: None
-        };
-        let mut file_name = String::from("");
+        let mut codec = Self::default();
         // 環境によってインストールされている バックエンド/コーデック/対応する拡張子 が違うので特定
         'find_backends: for backend in videoio::get_writer_backends().unwrap() {
             if videoio::CAP_IMAGES == backend as i32 {
@@ -678,10 +684,10 @@ impl Codec {
                 for extension in extension_list.to_vec() {
                     codec.backend = backend as i32;
                     codec.fourcc = i32::from_ne_bytes(*fourcc);
-                    file_name = format!("temp.{}", extension);
+                    full_file_name = format!("{}.{}", file_name, extension);
     
                     let ret = writer.open_with_backend(
-                        &file_name, codec.backend, codec.fourcc,
+                        &full_file_name, codec.backend, codec.fourcc,
                         15.0, core::Size{width: 640, height: 360}, true
                     ).unwrap_or(false);
                     if ret {
@@ -691,13 +697,13 @@ impl Codec {
 
                     codec.backend = videoio::CAP_ANY;
                     codec.fourcc = -1;
-                    file_name = "temp.avi".to_string();
+                    full_file_name = format!("{}.avi", file_name);
                 }
             }
         }
         writer.release().ok();
 
-        codec.file_name = Some(file_name);
+        codec.file_name = Some(full_file_name);
         codec
     }
 
@@ -709,20 +715,20 @@ impl Codec {
         )
     }
 
-    /// コーデック情報に基づいて VideoWriter を初期化する
+    /// コーデック情報に基づいて VideoCapture を初期化する
     pub fn open_reader_with_codec(&self, reader: &mut videoio::VideoCapture) -> opencv::Result<bool> {
         reader.open_file(&self.file_name.clone().unwrap(), self.backend)
     }
 }
 /// シングルトンでコーデックを保持するため
-struct WrappedCodec {
+pub struct WrappedCodec {
     codecs: Option<Codec>,
 }
 impl WrappedCodec {
     // 参照して返さないと、unwrap() で move 違反がおきてちぬ！
-    fn get(&mut self) -> &Codec {
+    pub fn get(&mut self) -> &Codec {
         if self.codecs.is_none() {
-            self.codecs = Some(Codec::find_codec());
+            self.codecs = Some(Codec::find_codec(None));
         }
         self.codecs.as_ref().unwrap()
     }
@@ -730,6 +736,9 @@ impl WrappedCodec {
 static mut CODECS: WrappedCodec = WrappedCodec {
     codecs: None
 };
+pub fn codecs() -> &'static mut WrappedCodec {
+    unsafe { &mut CODECS }
+}
 
 use std::time::{Duration, Instant};
 /// キャプチャ用のバッファ(動画ファイル[temp.*])を管理するクラス
@@ -775,7 +784,7 @@ impl CaptureFrameStore {
             self.reader.release()?;
         }
 
-        if !unsafe{ CODECS.get() }.open_writer_with_codec(&mut self.writer).unwrap_or(false) {
+        if !codecs().get().open_writer_with_codec(&mut self.writer).unwrap_or(false) {
             return Err(opencv::Error::new( 0, "not found Codec for [*.mp4 or *.avi]. maybe: you install any Codec for your PC".to_string() ));
         }
 
@@ -793,7 +802,7 @@ impl CaptureFrameStore {
             self.writer.release()?;
         }
 
-        if !unsafe{ CODECS.get() }.open_reader_with_codec(&mut self.reader).unwrap_or(false) {
+        if !codecs().get().open_reader_with_codec(&mut self.reader).unwrap_or(false) {
             return Err(opencv::Error::new( 0, "not initialized video reader. maybe: playing temp video?".to_string() ));
         }
 
@@ -810,6 +819,7 @@ impl CaptureFrameStore {
 
         self.reader.release()?;
         self.filled_by_frame = false;
+        self.recoded_frame = -1;
 
         Ok(())
     }
@@ -850,12 +860,7 @@ impl CaptureFrameStore {
 
     /// リプレイが終わってるか
     pub fn is_replay_end(&self) -> bool {
-        // self.recoded_frame が 0 に減算されきっていて、まだ recoding_hoge が初期化されていないと true
-        if 0 < self.recoded_frame {
-            return false;
-        }
-
-        self.recoding_start_time.is_some() || self.recoding_need_frame.is_some()
+        -1 == self.recoded_frame
     }
 
     /// 録画が終わり、必要なフレームが満たされたか

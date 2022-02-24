@@ -17,17 +17,22 @@ use crate::data::{
     SmashbrosData,
     SmashbrosDataTrait,
 };
-use crate::engine::SmashBrogEngine;
+use crate::engine::{
+    SmashBrogEngine,
+    smashbrog_engine,
+};
 use crate::resource::{
-    BgmManager,
+    SoundType,
+    battle_history,
     gui_config,
-    smashbros_resource,
     lang_loader,
+    smashbros_resource,
+    sound_manager,
 };
 use crate::scene::SceneList;
 
 
-pub fn make_gui_run() -> anyhow::Result<()> {
+pub async fn run_gui() -> anyhow::Result<()> {
     let mut native_options = eframe::NativeOptions::default();
     native_options.icon_data = Some(GUI::get_icon_data());
     native_options.initial_window_size = Some(GUI::get_initial_window_size());
@@ -75,7 +80,6 @@ trait  GUIViewTrait {
 
 
 pub struct GUI {
-    engine: SmashBrogEngine,
     capture_mode: CaptureMode,
     window_battle_information: WindowBattleInformation,
     window_battle_history: WindowBattleHistory,
@@ -84,7 +88,6 @@ pub struct GUI {
 impl GUI {
     fn new() -> Self {
         Self {
-            engine: SmashBrogEngine::default(),
             capture_mode: CaptureMode::default(),
             window_battle_information: WindowBattleInformation::default(),
             window_battle_history: WindowBattleHistory::default(),
@@ -181,37 +184,38 @@ impl GUI {
     // 対戦情報の更新
     fn update_battle_informations(&mut self) {
         // 検出状態
-        self.window_configuration.now_scene = self.engine.get_captured_scene();
-        self.window_configuration.prev_match_ratio = self.engine.get_prev_match_ratio();
+        self.window_configuration.now_scene = smashbrog_engine().get_mut().get_captured_scene();
+        self.window_configuration.prev_match_ratio = smashbrog_engine().get_mut().get_prev_match_ratio();
 
         if gui_config().get_mut().gui_state_config.show_captured {
             // 検出しているフレームを表示
-            let _ = opencv::highgui::imshow("smabrog - captured", self.engine.get_now_image());
+            let _ = opencv::highgui::imshow("smabrog - captured", smashbrog_engine().get_mut().get_now_image());
         }
 
         // 対戦中情報
-        self.window_battle_information.battle_information.set_data( self.engine.get_now_data() );
+        self.window_battle_information.battle_information.set_data( smashbrog_engine().get_mut().ref_now_data().clone() );
 
         // 下記から、戦歴情報の変動があったときだけにしたい処理
-        if !self.engine.update_now_data() {
+        if !smashbrog_engine().get_mut().is_update_now_data() {
             return;
         }
 
         // 戦歴
         self.window_battle_history.battle_information_list.clear();
-        let data_latest = self.engine.get_data_latest(self.window_configuration.result_max);
+        let data_latest = smashbrog_engine().get_mut().get_data_latest();
         for data in data_latest.clone() {
             let mut battle_information = WindowBattleInformationGroup::default();
             battle_information.set_data(data);
 
             self.window_battle_history.battle_information_list.push(battle_information);
         }
-        let all_data_list = self.engine.get_data_all_by_now_chara();
-        self.window_battle_history.set_data(SmashBrogEngine::get_wins_by_data_list_groupby_character(&all_data_list));
+        let all_data_list = smashbrog_engine().get_mut().get_data_all_by_now_chara();
+        self.window_battle_history.set_data(
+            SmashBrogEngine::get_wins_by_data_list_groupby_character(&all_data_list));
 
-        let chara_data_list = self.engine.get_data_latest_by_now_chara();
+        let chara_data_list = smashbrog_engine().get_mut().get_data_latest_by_now_chara();
         self.window_battle_information.wins_graph.set_data(
-            self.engine.get_now_data(),
+            smashbrog_engine().get_mut().get_now_data(),
             data_latest.clone(),
             SmashBrogEngine::get_win_lose_by_data_list(&data_latest),
             SmashBrogEngine::get_wins_by_data_list(&chara_data_list),
@@ -221,7 +225,7 @@ impl GUI {
 
     // BGM の更新
     fn update_bgm(&mut self) {
-        self.window_configuration.update_bgm(self.engine.ref_now_data());
+        self.window_configuration.update_bgm();
     }
 
     // 検出モードの更新
@@ -248,7 +252,7 @@ impl GUI {
 
         self.window_configuration.set_capture_mode(self.capture_mode.clone());
 
-        match self.engine.change_capture_mode(&self.capture_mode) {
+        match smashbrog_engine().get_mut().change_capture_mode(&self.capture_mode) {
             Ok(_) => {
                 let _ = gui_config().get_mut().save_config(false);
             },
@@ -269,7 +273,7 @@ impl GUI {
 
         gui_config().get_mut().lang = Some(now_lang.clone());
         smashbros_resource().get().change_language();
-        self.engine.change_language();
+        smashbrog_engine().get_mut().change_language();
     }
 }
 impl epi::App for GUI {
@@ -283,14 +287,52 @@ impl epi::App for GUI {
         }
         self.update_language(true);
         self.set_default_font(ctx);
-
         self.window_battle_information.setup(ctx);
         self.window_battle_history.setup(ctx);
         self.window_configuration.setup(ctx);
-        self.engine.change_result_max(self.window_configuration.result_max);
 
         self.window_battle_information.battle_information = WindowBattleInformationGroup::default();
         self.update_battle_informations();
+
+        smashbrog_engine().get_mut().registory_scene_event(
+            SceneList::Unknown,
+            SceneList::DecidedRules,
+            Box::new(|smashbros_data| {
+                // 試合中、最大ストックが警告未満になったら警告音を再生
+                if smashbros_data.is_decided_max_stock(0) {
+                    if smashbros_data.get_max_stock(0) < gui_config().get_mut().gui_state_config.stock_warning_under {
+                        if !gui_config().get_mut().stock_alert_command.is_empty() {
+                            let command_result = std::process::Command::new("cmd")
+                                .args(["/K", "start", &gui_config().get_mut().stock_alert_command])
+                                .output();
+                            if let Ok(output) = command_result {
+                                log::info!("stock_alert_command: {}", String::from_utf8_lossy(&output.stdout));
+                            }
+                        }
+                    }
+                }
+
+                // BGM が確定していて, BGM が許可されていないなら、変わりの BGM を再生する
+                if !smashbros_resource().get().bgm_list.is_empty() {
+                    if smashbrog_engine().get_mut().ref_now_data().is_decided_bgm_name() {
+                        if let Some(is_playble) = smashbros_resource().get().bgm_list.get(&smashbrog_engine().get_mut().ref_now_data().get_bgm_name()) {
+                            if !*is_playble {
+                                sound_manager().get_mut().play_bgm_random();
+                            }
+                        }
+                    }
+                }
+            })
+        );
+
+        let bgm_callback = Box::new(|_smashbros_data: &mut SmashbrosData| {
+            // もし BGM が再生中なら止める
+            if sound_manager().get_mut().is_playing(Some(SoundType::Bgm)) {
+                sound_manager().get_mut().stop(Some(SoundType::Bgm));
+            }
+        });
+        smashbrog_engine().get_mut().registory_scene_event(SceneList::GamePlaying, SceneList::GameEnd, bgm_callback.clone());
+        smashbrog_engine().get_mut().registory_scene_event(SceneList::GamePlaying, SceneList::ReadyToFight, bgm_callback.clone());
     }
 
     fn on_exit(&mut self) {
@@ -298,18 +340,19 @@ impl epi::App for GUI {
     }
 
     fn update(&mut self, ctx: &egui::CtxRef, frame: &epi::Frame) {
+        self.update_battle_informations();
+        self.update_capture_mode();
+        self.update_language(false);
+        self.update_bgm();
+        
         // 動作
-        if let Err(e) = self.engine.update() {
+        if let Err(e) = smashbrog_engine().get_mut().update() {
             // quit
             // TODO:ゆくゆくはエラー回復とかもできるようにしたい
             log::error!("quit. [{}]", e);
             frame.quit();
             return;
         }
-        self.update_battle_informations();
-        self.update_capture_mode();
-        self.update_language(false);
-        self.update_bgm();
 
         // 表示 (戦歴が最前面になるように下から描画)
         self.window_configuration.show(ctx);
@@ -352,7 +395,7 @@ impl GUIModelTrait for WindowBattleInformation {
 impl GUIViewTrait for WindowBattleInformation {
     fn ui(&mut self, ui: &mut egui::Ui) {
         if gui_config().get_mut().gui_state_config.battling {
-            self.battle_information.show_ui(ui);
+            self.battle_information.show_ui(ui, |_ui| {});
             ui.separator();
         }
         self.wins_graph.show_ui( ui, fl!(lang_loader().get(), "gsp") );
@@ -430,9 +473,8 @@ impl WindowBattleHistory {
 
     // N 戦の履歴表示
     fn battle_history_view(&mut self, ui: &mut egui::Ui) {
-        for group in &mut self.battle_information_list {
-            group.show_ui(ui);
-            ui.separator();
+        if WindowBattleInformationGroup::show_group_list_with_delete(ui, &mut self.battle_information_list) {
+            smashbrog_engine().get_mut().update_latest_n_data();
         }
     }
 
@@ -443,35 +485,35 @@ impl WindowBattleHistory {
                 plot::Values::from_values(vec![plot::Value::new(-2.5, 0.0), plot::Value::new(25.5, 0.0), plot::Value::new(Self::CHARA_TABLE_WIDTH, 0.0)]),
             ).color(egui::Color32::RED)
             .fill(10.0)
-            .name("負け")
+            .name(fl!(lang_loader().get(), "losing")),
         );
         ui.line(
             plot::Line::new(
                 plot::Values::from_values(vec![plot::Value::new(-2.5, 10.0), plot::Value::new(25.5, 10.0), plot::Value::new(Self::CHARA_TABLE_WIDTH, 10.0)]),
             ).color(egui::Color32::LIGHT_RED)
             .fill(40.0)
-            .name("不得手")
+            .name(fl!(lang_loader().get(), "not_good"))
         );
         ui.line(
             plot::Line::new(
                 plot::Values::from_values(vec![plot::Value::new(-2.5, 40.0), plot::Value::new(25.5, 40.0), plot::Value::new(Self::CHARA_TABLE_WIDTH, 40.0)]),
             ).color(egui::Color32::YELLOW)
             .fill(60.0)
-            .name("丁度")
+            .name(fl!(lang_loader().get(), "just"))
         );
         ui.line(
             plot::Line::new(
                 plot::Values::from_values(vec![plot::Value::new(-2.5, 60.0), plot::Value::new(25.5, 60.0), plot::Value::new(Self::CHARA_TABLE_WIDTH, 60.0)]),
             ).color(egui::Color32::LIGHT_GREEN)
             .fill(90.0)
-            .name("得意")
+            .name(fl!(lang_loader().get(), "good"))
         );
         ui.line(
             plot::Line::new(
                 plot::Values::from_values(vec![plot::Value::new(-2.5, 90.0), plot::Value::new(25.5, 90.0), plot::Value::new(Self::CHARA_TABLE_WIDTH, 90.0)]),
             ).color(egui::Color32::LIGHT_BLUE)
             .fill(100.0)
-            .name("勝ち")
+            .name(fl!(lang_loader().get(), "winning"))
         );
     }
 
@@ -517,7 +559,8 @@ impl WindowBattleHistory {
 
     // 対キャラの戦歴表示
     fn character_history_view(&mut self, ui: &mut egui::Ui) {
-        use crate::resource::{ battle_history, SmashbrosResource };
+        use crate::resource::SmashbrosResource;
+
         let one_width = ui.available_size().x / 4.0;
         GUI::new_grid(GUIIdList::CharacterHistoryGrid, 4, egui::Vec2::new(5.0, 0.0))
             .show(ui, |ui| {
@@ -572,9 +615,9 @@ impl WindowBattleHistory {
         self.character_history_graph.show_ui( ui, fl!(lang_loader().get(), "passage") );
         
         ui.separator();
-        for group in &mut self.character_history_list {
-            group.show_ui(ui);
-            ui.separator();
+        if WindowBattleInformationGroup::show_group_list_with_delete(ui, &mut self.character_history_list) {
+            smashbrog_engine().get_mut().update_latest_n_data();
+            smashbrog_engine().get_mut().update_chara_find_data();
         }
     }
 }
@@ -588,6 +631,7 @@ impl GUIModelTrait for WindowBattleHistory {
         egui::Window::new(self.name())
             .default_rect(Self::get_initial_window_rect())
             .vscroll(true)
+            .hscroll(true)
             .show(ctx, |ui| self.ui(ui));
     }
 }
@@ -624,8 +668,6 @@ impl Default for ConfigTab {
 // 設定
 struct WindowConfiguration {
     config_tab: ConfigTab,
-
-    bgm_manager: BgmManager,
     capture_mode: CaptureMode,
 
     window_caption_list: Vec<String>,
@@ -638,7 +680,6 @@ struct WindowConfiguration {
 
     pub now_scene: SceneList,
     pub prev_match_ratio: f64,
-    pub result_max: i64,
     pub font_family: String,
     pub font_size: i32,
 }
@@ -651,7 +692,6 @@ impl WindowConfiguration {
         Self {
             config_tab: ConfigTab::Source,
 
-            bgm_manager: BgmManager::default(),
             capture_mode: CaptureMode::default(),
 
             window_caption_list: Vec::new(),
@@ -664,7 +704,6 @@ impl WindowConfiguration {
 
             now_scene: SceneList::default(),
             prev_match_ratio: 0.0,
-            result_max: 0,
             font_family: String::new(),
             font_size: 0,
         }
@@ -762,7 +801,7 @@ impl WindowConfiguration {
         }
     }
 
-    pub fn update_bgm(&mut self, ref_now_data: &SmashbrosData) {
+    pub fn update_bgm(&mut self) {
         // 選択されているデバイスを取得
         let bgm_device_name = match gui_config().get_mut().bgm_device_name.as_ref() {
             Some(bgm_device_name) => bgm_device_name,
@@ -780,37 +819,27 @@ impl WindowConfiguration {
             None => return,
         };
 
-        if !ref_now_data.is_playing_battle() {
-            if let Some(before_volume) = self.before_volume {
-                // 試合中でないなら、BGM を停止して、音量を戻す
-                self.bgm_manager.stop();
-                match simple_audio_volume.set_master_volume(before_volume) {
-                    Ok(_) => (),
-                    Err(err) => log::error!("{}", err),
-                }
-                self.before_volume = None;
+        if let Some(before_volume) = self.before_volume {
+            // BGM が停止していて、音量を変更した痕跡があるならもとに戻す
+            if sound_manager().get_mut().is_playing(Some(SoundType::Bgm)) {
+                return;
             }
-            return;
-        }
-        if !ref_now_data.is_decided_bgm_name() {
-            // BGM が確定していないなら、音量を変更しようがない
-            return;
-        }
-        if gui_config().get_mut().gui_state_config.disable_volume == 1.0 {
-            // 無効化音量が 1.0 だと、そもそも音量を変更しない
-            return;
-        }
-        if self.before_volume.is_some() {
-            // すでに音量が変更されているなら、変更しない
-            return;
-        }
-
-        // BGM を再生して、音量を変更する
-        self.bgm_manager.play_random();
-        self.before_volume = Some(simple_audio_volume.get_master_volume().unwrap_or(1.0));
-        match simple_audio_volume.set_master_volume(self.before_volume.unwrap_or(1.0) * gui_config().get_mut().gui_state_config.disable_volume) {
-            Ok(_) => (),
-            Err(err) => log::error!("{}", err),
+            if let Err(err) = simple_audio_volume.set_master_volume(before_volume) {
+                log::error!("{}", err);
+            }
+            self.before_volume = None;
+        } else {
+            // 音量を変更する必要があり、BGM が再生中なら、現在の音量を記憶して変更する
+            if gui_config().get_mut().gui_state_config.disable_volume == 1.0 {
+                return;
+            }
+            if !sound_manager().get_mut().is_playing(Some(SoundType::Bgm)) {
+                return;
+            }
+            self.before_volume = Some(simple_audio_volume.get_master_volume().unwrap_or(1.0));
+            if let Err(err) = simple_audio_volume.set_master_volume(self.before_volume.unwrap_or(1.0) * gui_config().get_mut().gui_state_config.disable_volume) {
+                log::error!("{}", err);
+            }
         }
     }
 
@@ -971,12 +1000,12 @@ impl WindowConfiguration {
             .show(ui, |ui| {
                 // 結果を取得する限界数
                 ui.label(fl!(lang_loader().get(), "result_max"));
-                if egui::DragValue::new(&mut self.result_max)
+                if egui::DragValue::new(&mut gui_config().get_mut().result_max)
                     .clamp_range(1..=1000)
                     .speed(0.5)
                     .ui(ui).changed()
                 {
-                    gui_config().get_mut().result_max = self.result_max;
+                    smashbrog_engine().get_mut().change_result_max();
                 }
                 ui.end_row();
 
@@ -984,7 +1013,7 @@ impl WindowConfiguration {
                 ui.label(&format!( "{} {}", fl!(lang_loader().get(), "disable"), fl!(lang_loader().get(), "volume") ));
                 egui::DragValue::new(&mut gui_config().get_mut().gui_state_config.disable_volume)
                     .clamp_range(0.0..=1.0)
-                    .speed(0.1)
+                    .speed(0.01)
                     .ui(ui);
                 ui.end_row();
 
@@ -1027,14 +1056,14 @@ impl WindowConfiguration {
 
                 // BGM リスト音量
                 ui.label(&format!( "{} {}", fl!(lang_loader().get(), "play_list"), fl!(lang_loader().get(), "volume") ));
-                ui.add_enabled_ui(!self.bgm_manager.is_playing(), |ui| {
+                ui.add_enabled_ui(!sound_manager().get().is_playing(Some(SoundType::Beep)), |ui| {
                     egui::DragValue::new(&mut gui_config().get_mut().gui_state_config.play_list_volume)
                         .clamp_range(0.0..=1.0)
                         .speed(0.01)
                         .ui(ui);
                     if ui.button(fl!(lang_loader().get(), "play")).clicked() {
-                        self.bgm_manager.set_volume(gui_config().get_mut().gui_state_config.play_list_volume);
-                        self.bgm_manager.beep(440.0, std::time::Duration::from_millis(500));
+                        sound_manager().get_mut().set_volume(gui_config().get_mut().gui_state_config.play_list_volume);
+                        sound_manager().get_mut().beep(440.0, std::time::Duration::from_millis(500));
                     }
                 });
                 ui.end_row();
@@ -1046,14 +1075,14 @@ impl WindowConfiguration {
                         .clamp_range(2..=4)
                         .ui(ui);
                     ui.add(
-                        egui::TextEdit::singleline(&mut gui_config().get_mut().stock_warning_file)
-                            .hint_text("mp4")
+                        egui::TextEdit::singleline(&mut gui_config().get_mut().stock_alert_command)
+                            .hint_text("command")
                     );
                 });
                 if !ui.ctx().input().raw.dropped_files.is_empty() {
                     if let Some(path_buf) = ui.ctx().input().raw.dropped_files[0].path.clone() {
                         if path_buf.is_file() {
-                            gui_config().get_mut().stock_warning_file = path_buf.to_string_lossy().to_string();
+                            gui_config().get_mut().stock_alert_command = path_buf.to_string_lossy().to_string();
                         }
                     }
                 }
@@ -1092,10 +1121,9 @@ impl GUIModelTrait for WindowConfiguration {
         if let Some(visuals) = gui_config().get_mut().visuals.as_ref() {
             ctx.set_visuals(visuals.clone());
         }
-        self.result_max = gui_config().get_mut().result_max;
         self.video_device_id = -1;
         self.font_family_list = font_kit::source::SystemSource::new().all_families().unwrap();
-        match self.bgm_manager.load(gui_config().get_mut().bgm_playlist_folder.clone()) {
+        match sound_manager().get_mut().load(gui_config().get_mut().bgm_playlist_folder.clone()) {
             Ok(_) => (),
             Err(err) => log::error!("{}", err),
         }
@@ -1123,7 +1151,7 @@ impl GUIViewTrait for WindowConfiguration {
 }
 
 // 対戦情報グループ
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct WindowBattleInformationGroup {
     data: Option<SmashbrosData>,
 }
@@ -1131,6 +1159,56 @@ impl WindowBattleInformationGroup {
     // BattleInformationGroup を表示するのに必要なデータを設定する
     fn set_data(&mut self, data: SmashbrosData) {
         self.data = Some(data);
+    }
+
+    // BattleInformationGroup から 戦歴情報の削除を試みる
+    fn delete_data(&mut self) -> bool {
+        if self.data.is_none() {
+            return false;
+        }
+
+        if battle_history().get_mut().delete_data(self.data.as_ref().unwrap()).is_ok() {
+            log::info!("delete battle data: {:?}", self.data);
+            self.data = None;
+
+            true
+        } else {
+            false
+        }
+    }
+
+    // WindowBattleInformationGroup を削除ボタン付きで一覧表示する
+    pub fn show_group_list_with_delete(ui: &mut egui::Ui, group_list: &mut Vec<WindowBattleInformationGroup>) -> bool {
+        let mut remove_index = None;
+        let len = group_list.len();
+
+        for (index, group) in group_list.iter_mut().enumerate() {
+            group.show_ui(ui, |ui: &mut egui::Ui| {
+                // 戦歴一覧だけ削除できるボタンを設置する
+                ui.add_space(16.0);
+                ui.add(egui::Separator::default().vertical());
+                if ui.add(egui::Button::new("❌🗑").fill(egui::Color32::RED)).clicked() {
+                    remove_index = Some(index);
+                }
+            });
+
+            if index < len - 1 {
+                ui.separator();
+            }
+        };
+
+        if let Some(index) = remove_index {
+            let mut group = group_list.remove(index);
+            if !group.delete_data() {
+                group_list.insert(index, group);
+
+                false
+            } else {
+                true
+            }
+        } else {
+            false
+        }
     }
 
     // キャラと順位の表示
@@ -1201,7 +1279,83 @@ impl WindowBattleInformationGroup {
         }
     }
 
-    fn show_ui(&mut self, ui: &mut egui::Ui) {
+    // ルールの表示
+    fn show_rule(ui: &mut egui::Ui, data: &mut SmashbrosData) {
+        use crate::data::BattleRule;
+
+        let max_minute = data.get_max_time().as_secs() / 60;
+        let max_minute = format!(
+            "{:1}",
+            if max_minute == 0 { "?".to_string() } else { max_minute.to_string() }
+        );
+        let max_stock = data.get_max_stock(0);
+        let max_stock = format!(
+            "{}",
+            if max_stock == -1 { "?".to_string() } else { max_stock.to_string() }
+        );
+
+        match data.get_rule() {
+            BattleRule::Time => {
+                let max_second = data.get_max_time().as_secs() % 60;
+                let max_second = format!(
+                    "{:02}",
+                    if max_minute == "?" { "?".to_string() } else { max_second.to_string() }
+                );
+        
+                ui.add_sized( [16.0, 16.0], egui::Label::new("⏱") );
+                ui.add_sized( [0.0, 0.0], egui::Label::new("") );
+                ui.end_row();
+                ui.add_sized( [16.0, 16.0], egui::Label::new(max_minute + ":") );
+                ui.add_sized( [16.0, 16.0], egui::Label::new(max_second) );
+                ui.end_row();
+            },
+            BattleRule::Stock => {
+                ui.add_sized( [16.0, 16.0], egui::Label::new("⏱") );
+                ui.add_sized( [16.0, 16.0], egui::Label::new(max_minute) );
+                ui.end_row();
+                ui.add_sized( [16.0, 16.0], egui::Label::new("👥") );
+                ui.add_sized( [16.0, 16.0], egui::Label::new(max_stock));
+                ui.end_row();
+            },
+            BattleRule::Stamina => {
+                let max_hp = data.get_max_hp(0);
+                let max_hundreds = format!(
+                    "{}",
+                    if max_hp == 0 { "?".to_string() } else { (max_hp / 100).to_string() }
+                );
+                let max_tens = format!(
+                    "{}",
+                    if max_hp == 0 { "?".to_string() } else { (max_hp % 100).to_string() }
+                );
+        
+                ui.add_sized( [16.0, 16.0], egui::Label::new("⏱".to_string() + &max_minute) );
+                ui.add_sized( [16.0, 16.0], egui::Label::new("👥".to_string() + &max_stock) );
+                ui.end_row();
+                ui.add_sized( [16.0, 16.0], egui::Label::new("💖".to_string() + &max_hundreds));
+                ui.add_sized( [16.0, 16.0], egui::Label::new(max_tens));
+                ui.end_row();
+            },
+            BattleRule::Tournament => {
+                ui.add_sized( [16.0, 16.0], egui::Label::new("🏆") );
+                ui.add_sized( [16.0, 16.0], egui::Label::new("") );
+                ui.end_row();
+            },
+            _ => {
+                ui.add_sized( [16.0, 16.0], egui::Label::new("?") );
+                ui.add_sized( [16.0, 16.0], egui::Label::new("") );
+                ui.end_row();
+            },
+        }
+
+        // スタミナ の表示
+        match data.get_rule() {
+            BattleRule::Stamina => {
+            },
+            _ => (),
+        }
+    }
+
+    fn show_ui(&mut self, ui: &mut egui::Ui, add_ui: impl FnOnce(&mut egui::Ui)) {
         /*
          * [対戦情報グループ]
          * .1pキャラアイコン vs 2pキャラアイコン
@@ -1237,26 +1391,11 @@ impl WindowBattleInformationGroup {
 
                 ui.add(egui::Separator::default().vertical());
 
-                // 最大ストック,制限時間 の表示
+                // ルールの表示
                 GUI::new_grid("rules_icons", 2, egui::Vec2::new(0.0, 0.0))
                     .show(ui, |ui| {
-                        let max_stock = data.get_max_stock(0);
-                        ui.add_sized( [16.0, 16.0], egui::Label::new("👥") );
-                        ui.add_sized( [16.0, 16.0], egui::Label::new(format!(
-                            "{}",
-                            if max_stock == -1 { "?".to_string() } else { max_stock.to_string() }
-                        )));
-
-                        ui.end_row();
-
-                        let max_time = data.get_max_time().as_secs() / 60;
-                        ui.add_sized( [16.0, 16.0], egui::Label::new("⏱") );
-                        ui.add_sized( [16.0, 16.0], egui::Label::new(format!(
-                            "{}",
-                            if max_time == 0 { "?".to_string() } else { max_time.to_string() }
-                        )));
+                        Self::show_rule(ui, data);
                     });
-
                 ui.add(egui::Separator::default().vertical());
 
                 // ストックの表示
@@ -1267,6 +1406,8 @@ impl WindowBattleInformationGroup {
                         Self::show_player_stock(ui, data, 1);
                     });
 
+                // 追加の UI の表示
+                add_ui(ui);
                 ui.end_row();
             });
     }
@@ -1543,13 +1684,13 @@ impl WindowWinsGraph {
                         // 見切れる場合は戦闘力を100万単位にする
                         let gsp = self.last_power as f32 / 10_000.0;
                         ui.scope(|ui| {
-                            let gsp_string = if -1 == self.last_power { "なし".to_string() } else { format!( "{:.0}", gsp ) };
+                            let gsp_string = if -1 == self.last_power { fl!(lang_loader().get(), "empty") } else { format!( "{:.0}", gsp ) };
                             ui.small(gsp_string);
                             ui.small(format!( "{}", fl!(lang_loader().get(), "million") ));
                         });
                     } else {
                         ui.scope(|ui| {
-                            let gsp_string = if -1 == self.last_power { "なし".to_string() } else { format!( "{}", self.last_power ) };
+                            let gsp_string = if -1 == self.last_power { fl!(lang_loader().get(), "empty") } else { format!( "{}", self.last_power ) };
                             ui.small(format!( "{}", gsp_string ));
                             ui.small(format!( "{}", fl!(lang_loader().get(), "gsp") ));
                         });
@@ -1560,4 +1701,3 @@ impl WindowWinsGraph {
             });
     }
 }
- 

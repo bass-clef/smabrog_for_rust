@@ -116,6 +116,7 @@ pub mod utils {
         match Tesseract::new(None, Some(lang.unwrap_or("eng"))) {
             Ok(tess) => {
                 tess.set_page_seg_mode(seg_mode.unwrap_or(tesseract_sys::TessPageSegMode_PSM_RAW_LINE))
+                    .set_variable("debug_file", "tesseract.log").unwrap()
                     .set_frame(data, image.cols(), image.rows(),
                         image.channels(), image.channels() * image.cols()).unwrap()
                     .set_source_resolution(70)
@@ -137,9 +138,10 @@ pub mod utils {
         )
     }
     /// OCR(数値を検出)
-    pub async fn run_ocr_with_number(image: &core::Mat, valid_string: Option<&str>) -> Result<String, tesseract::TesseractError> {
+    pub async fn run_ocr_with_number(image: &core::Mat, valid_string: Option<&str>, is_single_char: bool) -> Result<String, tesseract::TesseractError> {
+        let mode = if is_single_char { Some(tesseract_sys::TessPageSegMode_PSM_SINGLE_CHAR) } else { None };
         Ok(
-            ocr_with_mat(image, None, None)
+            ocr_with_mat(image, None, mode)
                 .set_variable("tessedit_char_whitelist", valid_string.unwrap_or("0123456789-.")).unwrap()
                 .recognize()?
                 .get_text().unwrap_or("".to_string())
@@ -148,7 +150,7 @@ pub mod utils {
     /// OCR(日本語を検出)
     pub async fn run_ocr_with_japanese(image: &core::Mat) -> Result<String, tesseract::TesseractError> {
         Ok(
-            ocr_with_mat(image, Some("jpn"), None)
+            ocr_with_mat(image, Some("jpn"), Some(tesseract_sys::TessPageSegMode_PSM_SINGLE_WORD))
                 .recognize()?
                 .get_text().unwrap_or("".to_string())
                 .replace("\n", "")

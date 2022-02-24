@@ -1,5 +1,4 @@
 
-use difflib::sequencematcher::SequenceMatcher;
 use eframe::egui::TextureId;
 use opencv::prelude::MatTraitConst;
 use serde::{
@@ -24,12 +23,11 @@ pub struct SmashbrosResource {
 impl SmashbrosResource {
     fn matcher(string_list: &Vec<String>, maybe_name: &String, default_name: Option<&str>) -> (String, f32) {
         let mut max_ratio = 0.0;
-        let mut matcher = SequenceMatcher::new("", "");
         let mut name = default_name.unwrap_or("");
         for string_name in string_list {
-            matcher.set_seqs(string_name, maybe_name);
-            if max_ratio < matcher.ratio() {
-                max_ratio = matcher.ratio();
+            let ratio = strsim::jaro_winkler(string_name, maybe_name) as f32;
+            if max_ratio < ratio {
+                max_ratio = ratio;
                 name = string_name;
                 if 1.0 <= max_ratio {
                     break;
@@ -319,10 +317,10 @@ pub struct GUIConfig {
     pub bgm_device_name: Option<String>,
     #[serde(default)]
     pub bgm_session_name: Option<String>,
-    #[serde(default)]
+    #[serde(default = "GUIConfig::default_bgm_playlist_folder")]
     pub bgm_playlist_folder: String,
-    #[serde(default)]
-    pub stock_warning_file: String,
+    #[serde(default = "GUIConfig::default_stock_alert_command")]
+    pub stock_alert_command: String,
     #[serde(default)]
     pub gui_state_config: GUIStateConfig,
 }
@@ -379,6 +377,9 @@ impl GUIConfig {
 
         Ok(())
     }
+
+    pub fn default_bgm_playlist_folder() -> String { "./playlist".to_string() }
+    pub fn default_stock_alert_command() -> String { "./resource/danger.avi".to_string() }
 }
 /// シングルトンで設定ファイルを保持するため
 pub struct WrappedGUIConfig {

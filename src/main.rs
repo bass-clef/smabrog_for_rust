@@ -11,13 +11,16 @@
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_logger();
+
     // smabrog::gui::make_gui_run().unwrap();
-    smabrog::egui::make_gui_run().unwrap();
+    smabrog::egui::run_gui().await.unwrap();
 
     Ok(())
 }
 
 fn init_logger(){
+    log_panics::init();
+
     let base_config = fern::Dispatch::new();
  
     let file_config = fern::Dispatch::new()

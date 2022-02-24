@@ -2,7 +2,7 @@
 battling    = 戦闘中情報
 chara_image = キャラ画像
 disable     = 無効化
-empty       = なし
+empty       = ---
 exact_match = 完全一致
 folder      = フォルダ
 graph       = グラフ
@@ -21,6 +21,13 @@ warning     = 警告
 win_rate    = 勝率
 win_lose    = 勝敗
 wins        = 連勝
+
+# グラフのラベル
+losing      = 負け
+not_good    = 不得手
+just        = 丁度
+good        = 得意
+winning     = 勝ち
 
 # 戦闘に関する文字列
 battle_information  = 対戦情報

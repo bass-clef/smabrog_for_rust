@@ -14,7 +14,7 @@ use crate::resource::*;
 
 
 /// 値を推測して一番高いものを保持しておくためのクラス
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ValueGuesser<K: Clone + Eq + std::hash::Hash> {
     value_count_list: HashMap<K, i32>,
     max_value: K,
@@ -375,7 +375,7 @@ impl<'de> Visitor<'de> for SmashbrosDataVisitor {
 }
 
 /// データ (engine 処理用)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SmashbrosData {
     /// this is database key. // {db}.{col}.find(doc!{ _id: ObjectId(collection_id) });
     db_collection_id: Option<String>,
@@ -389,7 +389,7 @@ pub struct SmashbrosData {
     rule_name: BattleRule,
 
     // ルール条件
-    max_time: Option<std::time::Duration>,
+    max_time: Option<ValueGuesser<std::time::Duration>>,
     max_stock_list: Option<Vec<ValueGuesser<i32>>>,
     max_hp_list: Option<Vec<ValueGuesser<i32>>>,
 
@@ -400,11 +400,11 @@ pub struct SmashbrosData {
     order_list: Vec<ValueGuesser<i32>>,
     power_list: Vec<ValueGuesser<i32>>,
 
+    /* serde(skip) */
     prev_chara_list: Vec<String>,
     prev_power_list: Vec<i32>,
-
-    /* serde(skip) */
     bgm_name: ValueGuesser<String>,
+    stock_guess_list: Vec<ValueGuesser<i32>>,
 }
 impl Default for SmashbrosData {
     fn default() -> Self { Self::new() }
@@ -432,7 +432,11 @@ impl SmashbrosDataTrait for SmashbrosData {
     fn get_rule(&self) -> BattleRule { self.rule_name.clone() }
 
     fn get_max_time(&self) -> std::time::Duration {
-        self.max_time.unwrap_or(std::time::Duration::from_secs(0))
+        if self.max_time.is_none() {
+            return std::time::Duration::from_secs(0);
+        }
+
+        self.max_time.as_ref().unwrap().get().clone()
     }
     fn get_max_stock(&self, player_number: i32) -> i32 {
         let max_stock_list = match &self.max_stock_list {
@@ -503,7 +507,7 @@ impl SmashbrosDataTrait for SmashbrosData {
     fn set_player_count(&mut self, value: i32) { self.player_count = value; }
     fn set_rule(&mut self, value: BattleRule) { self.rule_name = value; }
 
-    fn set_max_time(&mut self, value: std::time::Duration) { self.max_time = Some(value) }
+    fn set_max_time(&mut self, value: std::time::Duration) { self.max_time.as_mut().unwrap().set(value); }
     fn set_max_stock(&mut self, player_number: i32, value: i32) { (*self.max_stock_list.as_mut().unwrap())[player_number as usize].set(value); }
     fn set_max_hp(&mut self, player_number: i32, value: i32) { (*self.max_hp_list.as_mut().unwrap())[player_number as usize].set(value); }
 
@@ -549,13 +553,25 @@ impl SmashbrosDataTrait for SmashbrosData {
     }
 
     fn is_decided_max_time(&self) -> bool {
-        self.max_time.is_some()
+        if self.max_time.is_none() {
+            return false;
+        }
+
+        self.max_time.as_ref().unwrap().is_decided()
     }
     fn is_decided_max_stock(&self, player_number: i32) -> bool {
-        self.max_stock_list.is_some() && -1 != self.as_ref().get_max_stock(player_number)
+        if self.max_stock_list.is_none() {
+            return false;
+        }
+
+        self.max_stock_list.as_ref().unwrap()[player_number as usize].is_decided()
     }
     fn is_decided_max_hp(&self, player_number: i32) -> bool {
-        self.max_hp_list.is_some() && -1 != self.as_ref().get_max_hp(player_number)
+        if self.max_hp_list.is_none() {
+            return false;
+        }
+
+        self.max_hp_list.as_ref().unwrap()[player_number as usize].is_decided()
     }
 
     fn is_decided_character_name(&self, player_number: i32) -> bool {
@@ -564,7 +580,7 @@ impl SmashbrosDataTrait for SmashbrosData {
     }
     fn is_decided_stock(&self, player_number: i32) -> bool {
         // ストック数が 1 以下の時はそれ以上減ることは仕様上ないので決定済みとする
-        !self.stock_list.is_empty() && self.stock_list[player_number as usize].get() <= 1
+        !self.stock_list.is_empty() && self.stock_list[player_number as usize].get() != -1 && self.stock_list[player_number as usize].get() <= 1
     }
     fn is_decided_order(&self, player_number: i32) -> bool {
         !self.order_list.is_empty() && self.order_list[player_number as usize].is_decided()
@@ -648,7 +664,10 @@ impl SmashbrosData {
     pub const CHARACTER_NAME_UNKNOWN: &'static str = "unknown";
 
     // ストックの最低一致数ボーダー
-    pub const DEFAULT_STOCK_MAX_BORDER: i32 = 2;
+    pub const DEFAULT_STOCK_MAX_BORDER: i32 = 3;
+
+    // max 系の最低一致数ボーダー
+    pub const DEFAULT_MAX_HOGE_MAX_BORDER: i32 = 3;
 
     fn new() -> Self {
         Self {
@@ -675,6 +694,7 @@ impl SmashbrosData {
             prev_power_list: vec![],
 
             bgm_name: ValueGuesser::new("".to_string()),
+            stock_guess_list: vec![ValueGuesser::new(-1)],
         }
     }
 
@@ -710,7 +730,6 @@ impl SmashbrosData {
         self.end_time = None;
         
         self.rule_name = BattleRule::Unknown;
-        self.max_time = None;
 
         self.chara_list.clear();
         self.group_list.clear();
@@ -730,7 +749,10 @@ impl SmashbrosData {
             self.stock_list.push( ValueGuesser::new(-1) );
             self.order_list.push( ValueGuesser::new(-1) );
             self.power_list.push( ValueGuesser::new(-1) );
+
+            self.stock_guess_list.push( ValueGuesser::new(-1) );
         }
+        self.max_time = Some(ValueGuesser::new( std::time::Duration::from_secs(0) ));
         self.max_stock_list = Some( max_stock_list );
         self.max_hp_list = Some( max_hp_list );
 
@@ -754,23 +776,32 @@ impl SmashbrosData {
         // 初期値代入
         let mut max_stock_list: Vec<ValueGuesser<i32>> = Vec::new();
         let mut max_hp_list: Vec<ValueGuesser<i32>> = Vec::new();
+
+        self.rule_name = BattleRule::Unknown;
+
         self.chara_list.clear();
         self.group_list.clear();
         self.stock_list.clear();
         self.order_list.clear();
         self.power_list.clear();
+
         for _ in 0..self.player_count {
-            max_stock_list.push( ValueGuesser::new(-1) );
-            max_hp_list.push( ValueGuesser::new(-1) );
+            max_stock_list.push( ValueGuesser::new(-1).set_border(Self::DEFAULT_MAX_HOGE_MAX_BORDER) );
+            max_hp_list.push( ValueGuesser::new(-1).set_border(Self::DEFAULT_MAX_HOGE_MAX_BORDER) );
 
             self.chara_list.push( ValueGuesser::new(SmashbrosData::CHARACTER_NAME_UNKNOWN.to_string()) );
             self.group_list.push( ValueGuesser::new(PlayerGroup::Unknown) );
-            self.stock_list.push( ValueGuesser::new(-1).set_border(Self::DEFAULT_STOCK_MAX_BORDER) );
+            self.stock_list.push( ValueGuesser::new(-1) );
             self.order_list.push( ValueGuesser::new(-1) );
             self.power_list.push( ValueGuesser::new(-1) );
+
+            self.stock_guess_list.push( ValueGuesser::new(-1).set_border(Self::DEFAULT_STOCK_MAX_BORDER) );
         }
+        self.max_time = Some(ValueGuesser::new( std::time::Duration::from_secs(0) ).set_border(Self::DEFAULT_MAX_HOGE_MAX_BORDER));
         self.max_stock_list = Some( max_stock_list );
         self.max_hp_list = Some( max_hp_list );
+
+        self.bgm_name = ValueGuesser::new("".to_string());
 
         match player_count {
             2 => {
@@ -784,11 +815,6 @@ impl SmashbrosData {
     /// 試合後の処理
     /// @return bool true:ついでにデータも削除した
     pub fn finalize_battle(&mut self) -> bool {
-        // 試合が終わっていると保存する
-        if self.is_finished_battle() {
-            self.save_battle();
-        }
-
         self.initialize_data()
     }
     /// 試合開始の設定 (GameStart で呼ぶ)
@@ -805,6 +831,7 @@ impl SmashbrosData {
             // 既に保存済み or バトルが終わってない
             return;
         }
+        log::info!("save_battle: {:?}", self.get_id());
 
         // DBに保存するときだけ chara_list を ja に合わせておく(クエリを単純にするため)
         let back_chara_list = self.chara_list.clone();
@@ -880,11 +907,10 @@ impl SmashbrosData {
             _ => (),
         }
 
-        self.set_max_time(std::time::Duration::from_secs(maybe_time));
-
-        log::info!("max time {:?}s", maybe_time);
+        if self.max_time.as_mut().unwrap().guess(&std::time::Duration::from_secs(maybe_time)) {
+            log::info!("max time {:?}s", maybe_time);
+        }
     }
-
     /// 最大ストック数の推測
     pub fn guess_max_stock(&mut self, player_number: i32, maybe_stock: i32) {
         if self.is_decided_max_stock(player_number) {
@@ -901,9 +927,9 @@ impl SmashbrosData {
             _ => (),
         }
 
-        (*self.max_stock_list.as_mut().unwrap())[player_number as usize].guess(&maybe_stock);
-
-        log::info!("max stock {}p: {}? => {:?}", player_number+1, maybe_stock, self.get_max_stock(player_number));
+        if (*self.max_stock_list.as_mut().unwrap())[player_number as usize].guess(&maybe_stock) {
+            log::info!("max stock {}p: {}? => {:?}", player_number+1, maybe_stock, self.get_max_stock(player_number));
+        }
     }
     /// 最大ストック数は確定しているか
     pub fn all_decided_max_stock(&self) -> bool {
@@ -911,17 +937,32 @@ impl SmashbrosData {
     }
     /// 最大HPの推測
     pub fn guess_max_hp(&mut self, player_number: i32, maybe_hp: i32) {
-        if self.is_decided_max_stock(player_number) {
+        if self.is_decided_max_hp(player_number) {
             return;
         }
 
-        (*self.max_hp_list.as_mut().unwrap())[player_number as usize].guess(&maybe_hp);
-
-        log::info!("max hp {}p: {}? => {:?}", player_number+1, maybe_hp, self.get_max_hp(player_number));
+        if (*self.max_hp_list.as_mut().unwrap())[player_number as usize].guess(&maybe_hp) {
+            log::info!("max hp {}p: {}? => {:?}", player_number+1, maybe_hp, self.get_max_hp(player_number));
+        }
     }
     /// 最大HPは確定しているか
     pub fn all_decided_max_hp(&self) -> bool {
         (0..self.player_count).collect::<Vec<i32>>().iter().all( |&player_number| self.is_decided_max_hp(player_number) )
+    }
+
+    /// ルール条項がすべて確定しているか
+    pub fn is_decided_rule_all_clause(&self) -> bool {
+        if !self.is_decided_rule() {
+            return false;
+        }
+
+        return match self.rule_name {
+            BattleRule::Time => self.is_decided_max_time(),
+            BattleRule::Stock => self.is_decided_max_time() && self.all_decided_max_stock(),
+            BattleRule::Stamina => self.is_decided_max_time() && self.all_decided_max_stock() && self.all_decided_max_hp(),
+            BattleRule::Tournament => self.is_playing_battle(),
+            _ => false,
+        }
     }
 
     /// プレイヤーが使用しているキャラクターの設定
@@ -948,9 +989,7 @@ impl SmashbrosData {
 
     /// プレイヤーのストックの推測
     pub fn guess_stock(&mut self, player_number: i32, maybe_stock: i32) {
-        if self.stock_list[player_number as usize].is_decided()
-            && self.stock_list[player_number as usize].get() == maybe_stock
-        {
+        if self.get_stock(player_number) == maybe_stock {
             return;
         }
 
@@ -964,12 +1003,11 @@ impl SmashbrosData {
             _ => (),
         }
 
-        if self.stock_list[player_number as usize].guess(&maybe_stock) {
+        // 試合中のストック何度も変動するので、推測した値と暫定とを別にする
+        if self.stock_guess_list[player_number as usize].guess(&maybe_stock) {
+            self.stock_list[player_number as usize].set(maybe_stock);
+            self.stock_guess_list[player_number as usize] = ValueGuesser::new(-1);
             log::info!("stock {}p: {}? => {:?}", player_number+1, maybe_stock, self.get_stock(player_number));
-        }
-
-        if self.stock_list[player_number as usize].is_decided() {
-            self.stock_list[player_number as usize].set(maybe_stock)
         }
     }
     /// 全員分のストックは確定しているか
@@ -1095,8 +1133,16 @@ impl SmashbrosData {
         Some(true)
     }
 
+    /// BGM を返す
+    pub fn get_bgm_name(&self) -> String {
+        self.bgm_name.get()
+    }
     /// BGM の推測
     pub fn guess_bgm_name(&mut self, maybe_bgm_name: String) {
+        if self.bgm_name.is_decided() {
+            return;
+        }
+
         let (bgm_name, ratio) = match SmashbrosResource::convert_bgm_list(maybe_bgm_name.to_string()) {
             Some(bgm) => bgm,
             None => return,
