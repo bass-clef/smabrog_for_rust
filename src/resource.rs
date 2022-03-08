@@ -37,8 +37,8 @@ use crate::data::SmashbrosData;
 // #[cfg(dependencies = "eframe")]
 pub mod eframe_resource;
 pub use eframe_resource::{
-    gui_config,
-    smashbros_resource,
+    GUI_CONFIG,
+    SMASHBROS_RESOURCE,
     SmashbrosResource,
 };
 
@@ -77,11 +77,12 @@ impl WrappedFluentLanguageLoader {
         self.lang = Some(loader);
     }
 }
-static mut LANG: WrappedFluentLanguageLoader = WrappedFluentLanguageLoader {
+static mut _LANG_LOADER: WrappedFluentLanguageLoader = WrappedFluentLanguageLoader {
     lang: None,
 };
-pub fn lang_loader() -> &'static mut WrappedFluentLanguageLoader { unsafe { &mut LANG } }
-pub fn is_lang_english() -> bool { lang_loader().get().current_language().language.as_str() == "en" }
+#[allow(non_snake_case)]
+pub fn LANG_LOADER() -> &'static mut WrappedFluentLanguageLoader { unsafe { &mut _LANG_LOADER } }
+pub fn is_lang_english() -> bool { LANG_LOADER().get().current_language().language.as_str() == "en" }
 
 
 /// スマブラ情報が入ったリソースファイル(serde_jsonで読み込むためのコンテナ)
@@ -104,13 +105,13 @@ impl Default for SmashbrosResourceText {
 impl SmashbrosResourceText {
     const FILE_PATH: &'static str = "smashbros_resource.yml";
     fn new() -> Self {
-        let lang = lang_loader().get().current_language().language.clone();
+        let lang = LANG_LOADER().get().current_language().language.clone();
         let path = format!("{}_{}", lang.as_str(), SmashbrosResourceText::FILE_PATH);
         let mut own = Self::load_resources(&path);
         log::info!("loaded SmashBros by {} resource version [{}.*.*]", lang.as_str(), own.version);
 
         // icon_list, bgm_list は全言語のを読み込んでおく
-        for lang in lang_loader().get().available_languages(&Localizations).unwrap() {
+        for lang in LANG_LOADER().get().available_languages(&Localizations).unwrap() {
             let path = format!("{}_{}", lang.language.as_str(), SmashbrosResourceText::FILE_PATH);
 
             own.icon_list.extend(Self::load_resources(&path).icon_list);
@@ -353,11 +354,12 @@ impl WrappedBattleHistory {
         self.battle_history.as_mut().unwrap()
     }
 }
-static mut BATTLE_HISTORY: WrappedBattleHistory = WrappedBattleHistory {
+static mut _BATTLE_HISTORY: WrappedBattleHistory = WrappedBattleHistory {
     battle_history: None,
 };
-pub fn battle_history() -> &'static mut WrappedBattleHistory {
-    unsafe { &mut BATTLE_HISTORY }
+#[allow(non_snake_case)]
+pub fn BATTLE_HISTORY() -> &'static mut WrappedBattleHistory {
+    unsafe { &mut _BATTLE_HISTORY }
 }
 
 
@@ -562,9 +564,10 @@ impl WrappedSoundManager {
         self.sound_manager.as_mut().unwrap()
     }
 }
-static mut BGM_MANAGER: WrappedSoundManager = WrappedSoundManager {
+static mut _SOUND_MANAGER: WrappedSoundManager = WrappedSoundManager {
     sound_manager: None,
 };
-pub fn sound_manager() -> &'static mut WrappedSoundManager {
-    unsafe { &mut BGM_MANAGER }
+#[allow(non_snake_case)]
+pub fn SOUND_MANAGER() -> &'static mut WrappedSoundManager {
+    unsafe { &mut _SOUND_MANAGER }
 }

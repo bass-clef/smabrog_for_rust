@@ -19,15 +19,15 @@ use crate::data::{
 };
 use crate::engine::{
     SmashBrogEngine,
-    smashbrog_engine,
+    SMASHBROS_ENGINE,
 };
 use crate::resource::{
     SoundType,
-    battle_history,
-    gui_config,
-    lang_loader,
-    smashbros_resource,
-    sound_manager,
+    BATTLE_HISTORY,
+    GUI_CONFIG,
+    LANG_LOADER,
+    SMASHBROS_RESOURCE,
+    SOUND_MANAGER,
 };
 use crate::scene::SceneList;
 
@@ -110,7 +110,7 @@ impl GUI {
 
     // data の player_id のキャラ画像を指定 size で返す
     pub fn get_chara_image(chara_name: String, size: [f32; 2]) -> Option<egui::Image> {
-        if let Some(chara_texture) = smashbros_resource().get().get_image_handle(chara_name) {
+        if let Some(chara_texture) = SMASHBROS_RESOURCE().get_mut().get_image_handle(chara_name) {
             return Some(egui::Image::new(chara_texture, egui::Vec2::new(size[0], size[1])));
         }
 
@@ -160,8 +160,8 @@ impl GUI {
 
         ctx.set_fonts(fonts);
 
-        gui_config().get_mut().font_size = Some(font_size);
-        gui_config().get_mut().font_family = Some(font_datas.0);
+        GUI_CONFIG().get_mut().font_size = Some(font_size);
+        GUI_CONFIG().get_mut().font_family = Some(font_datas.0);
     }
 
     // 幅が 0 の egui::Grid を返す
@@ -175,47 +175,47 @@ impl GUI {
 
     // デフォルトフォントの設定
     fn set_default_font(&mut self, ctx: &egui::CtxRef) {
-        Self::set_font(ctx, gui_config().get_mut().font_family.clone(), gui_config().get_mut().font_size.unwrap_or(12));
+        Self::set_font(ctx, GUI_CONFIG().get_mut().font_family.clone(), GUI_CONFIG().get_mut().font_size.unwrap_or(12));
 
-        self.window_configuration.font_size = gui_config().get_mut().font_size.clone().unwrap();
-        self.window_configuration.font_family = gui_config().get_mut().font_family.clone().unwrap();
+        self.window_configuration.font_size = GUI_CONFIG().get_mut().font_size.clone().unwrap();
+        self.window_configuration.font_family = GUI_CONFIG().get_mut().font_family.clone().unwrap();
     }
 
     // 対戦情報の更新
     fn update_battle_informations(&mut self) {
         // 検出状態
-        self.window_configuration.now_scene = smashbrog_engine().get_mut().get_captured_scene();
-        self.window_configuration.prev_match_ratio = smashbrog_engine().get_mut().get_prev_match_ratio();
+        self.window_configuration.now_scene = SMASHBROS_ENGINE().get_mut().get_captured_scene();
+        self.window_configuration.prev_match_ratio = SMASHBROS_ENGINE().get_mut().get_prev_match_ratio();
 
-        if gui_config().get_mut().gui_state_config.show_captured {
+        if GUI_CONFIG().get_mut().gui_state_config.show_captured {
             // 検出しているフレームを表示
-            let _ = opencv::highgui::imshow("smabrog - captured", smashbrog_engine().get_mut().get_now_image());
+            let _ = opencv::highgui::imshow("smabrog - captured", SMASHBROS_ENGINE().get_mut().get_now_image());
         }
 
         // 対戦中情報
-        self.window_battle_information.battle_information.set_data( smashbrog_engine().get_mut().ref_now_data().clone() );
+        self.window_battle_information.battle_information.set_data( SMASHBROS_ENGINE().get_mut().ref_now_data().clone() );
 
         // 下記から、戦歴情報の変動があったときだけにしたい処理
-        if !smashbrog_engine().get_mut().is_update_now_data() {
+        if !SMASHBROS_ENGINE().get_mut().is_update_now_data() {
             return;
         }
 
         // 戦歴
         self.window_battle_history.battle_information_list.clear();
-        let data_latest = smashbrog_engine().get_mut().get_data_latest();
+        let data_latest = SMASHBROS_ENGINE().get_mut().get_data_latest();
         for data in data_latest.clone() {
             let mut battle_information = WindowBattleInformationGroup::default();
             battle_information.set_data(data);
 
             self.window_battle_history.battle_information_list.push(battle_information);
         }
-        let all_data_list = smashbrog_engine().get_mut().get_data_all_by_now_chara();
+        let all_data_list = SMASHBROS_ENGINE().get_mut().get_data_all_by_now_chara();
         self.window_battle_history.set_data(
             SmashBrogEngine::get_wins_by_data_list_groupby_character(&all_data_list));
 
-        let chara_data_list = smashbrog_engine().get_mut().get_data_latest_by_now_chara();
+        let chara_data_list = SMASHBROS_ENGINE().get_mut().get_data_latest_by_now_chara();
         self.window_battle_information.wins_graph.set_data(
-            smashbrog_engine().get_mut().get_now_data(),
+            SMASHBROS_ENGINE().get_mut().get_now_data(),
             data_latest.clone(),
             SmashBrogEngine::get_win_lose_by_data_list(&data_latest),
             SmashBrogEngine::get_wins_by_data_list(&chara_data_list),
@@ -239,11 +239,11 @@ impl GUI {
             // 未選択状態での設定はコンフィグから取得しておく
             match self.capture_mode.as_mut() {
                 CaptureMode::Window(_, caption_name) => {
-                    *caption_name = gui_config().get_mut().capture_win_caption.clone();
+                    *caption_name = GUI_CONFIG().get_mut().capture_win_caption.clone();
                 },
                 CaptureMode::VideoDevice(_, device_id, _) => {
                     *device_id = self.window_configuration.get_device_id(
-                        gui_config().get_mut().capture_device_name.clone()
+                        GUI_CONFIG().get_mut().capture_device_name.clone()
                     ).unwrap_or(-1);
                 },
                 _ => (),
@@ -252,9 +252,9 @@ impl GUI {
 
         self.window_configuration.set_capture_mode(self.capture_mode.clone());
 
-        match smashbrog_engine().get_mut().change_capture_mode(&self.capture_mode) {
+        match SMASHBROS_ENGINE().get_mut().change_capture_mode(&self.capture_mode) {
             Ok(_) => {
-                let _ = gui_config().get_mut().save_config(false);
+                let _ = GUI_CONFIG().get_mut().save_config(false);
             },
             Err(e) => log::warn!("{}", e),
         }
@@ -264,26 +264,26 @@ impl GUI {
     fn update_language(&mut self, is_initialize: bool) {
         use i18n_embed::LanguageLoader;
 
-        let now_lang = lang_loader().get().current_language();
-        if let Some(lang) = gui_config().get_mut().lang.as_ref() {
+        let now_lang = LANG_LOADER().get().current_language();
+        if let Some(lang) = GUI_CONFIG().get_mut().lang.as_ref() {
             if !is_initialize && now_lang.language == lang.language {
                 return;
             }
         }
 
-        gui_config().get_mut().lang = Some(now_lang.clone());
-        smashbros_resource().get().change_language();
-        smashbrog_engine().get_mut().change_language();
+        GUI_CONFIG().get_mut().lang = Some(now_lang.clone());
+        SMASHBROS_RESOURCE().get_mut().change_language();
+        SMASHBROS_ENGINE().get_mut().change_language();
     }
 }
 impl epi::App for GUI {
     fn name(&self) -> &str { "smabrog" }
 
     fn setup(&mut self, ctx: &egui::CtxRef, frame: &epi::Frame, _storage: Option<&dyn epi::Storage>) {
-        smashbros_resource().init(Some(frame));
-        gui_config().get_mut().load_config(true).expect("Failed to load config");
-        if let Some(lang) = gui_config().get_mut().lang.as_ref() {
-            lang_loader().change(lang.clone());
+        SMASHBROS_RESOURCE().init(Some(frame));
+        GUI_CONFIG().get_mut().load_config(true).expect("Failed to load config");
+        if let Some(lang) = GUI_CONFIG().get_mut().lang.as_ref() {
+            LANG_LOADER().change(lang.clone());
         }
         self.update_language(true);
         self.set_default_font(ctx);
@@ -294,30 +294,27 @@ impl epi::App for GUI {
         self.window_battle_information.battle_information = WindowBattleInformationGroup::default();
         self.update_battle_informations();
 
-        smashbrog_engine().get_mut().registory_scene_event(
+        SMASHBROS_ENGINE().get_mut().registory_scene_event(
             SceneList::Unknown,
             SceneList::DecidedRules,
             Box::new(|smashbros_data| {
                 // 試合中、最大ストックが警告未満になったら警告音を再生
                 if smashbros_data.is_decided_max_stock(0) {
-                    if smashbros_data.get_max_stock(0) < gui_config().get_mut().gui_state_config.stock_warning_under {
-                        if !gui_config().get_mut().stock_alert_command.is_empty() {
+                    if smashbros_data.get_max_stock(0) < GUI_CONFIG().get_mut().gui_state_config.stock_warning_under {
+                        if !GUI_CONFIG().get_mut().stock_alert_command.is_empty() {
                             let command_result = std::process::Command::new("cmd")
-                                .args(["/K", "start", &gui_config().get_mut().stock_alert_command])
+                                .args(["/K", "start", &GUI_CONFIG().get_mut().stock_alert_command])
                                 .output();
-                            if let Ok(output) = command_result {
-                                log::info!("stock_alert_command: {}", String::from_utf8_lossy(&output.stdout));
-                            }
-                        }
-                    }
-                }
-
-                // BGM が確定していて, BGM が許可されていないなら、変わりの BGM を再生する
-                if !smashbros_resource().get().bgm_list.is_empty() {
-                    if smashbrog_engine().get_mut().ref_now_data().is_decided_bgm_name() {
-                        if let Some(is_playble) = smashbros_resource().get().bgm_list.get(&smashbrog_engine().get_mut().ref_now_data().get_bgm_name()) {
-                            if !*is_playble {
-                                sound_manager().get_mut().play_bgm_random();
+                            
+                            match command_result {
+                                Ok(result) => {
+                                    if result.status.success() {
+                                        log::info!("stock alert command: {}", String::from_utf8_lossy(&result.stdout));
+                                    } else {
+                                        log::warn!("Failed to execute command: {}", String::from_utf8_lossy(&result.stderr));
+                                    }
+                                },
+                                Err(e) => log::error!("{}", e),
                             }
                         }
                     }
@@ -325,18 +322,36 @@ impl epi::App for GUI {
             })
         );
 
+        SMASHBROS_ENGINE().get_mut().registory_scene_event(
+            SceneList::Unknown,
+            SceneList::DecidedBgm,
+            Box::new(|smashbros_data| {
+                // BGM が確定していて, BGM が許可されていないなら、変わりの BGM を再生する
+                if !SMASHBROS_RESOURCE().get_mut().bgm_list.is_empty() {
+                    if smashbros_data.is_decided_bgm_name() {
+                        if let Some(is_playble) = SMASHBROS_RESOURCE().get_mut().bgm_list.get(&smashbros_data.get_bgm_name()) {
+                            if !*is_playble {
+                                SOUND_MANAGER().get_mut().play_bgm_random();
+                            }
+                        }
+                    }
+                }
+            })
+        );
+
+
         let bgm_callback = Box::new(|_smashbros_data: &mut SmashbrosData| {
             // もし BGM が再生中なら止める
-            if sound_manager().get_mut().is_playing(Some(SoundType::Bgm)) {
-                sound_manager().get_mut().stop(Some(SoundType::Bgm));
+            if SOUND_MANAGER().get_mut().is_playing(Some(SoundType::Bgm)) {
+                SOUND_MANAGER().get_mut().stop(Some(SoundType::Bgm));
             }
         });
-        smashbrog_engine().get_mut().registory_scene_event(SceneList::GamePlaying, SceneList::GameEnd, bgm_callback.clone());
-        smashbrog_engine().get_mut().registory_scene_event(SceneList::GamePlaying, SceneList::ReadyToFight, bgm_callback.clone());
+        SMASHBROS_ENGINE().get_mut().registory_scene_event(SceneList::GamePlaying, SceneList::GameEnd, bgm_callback.clone());
+        SMASHBROS_ENGINE().get_mut().registory_scene_event(SceneList::GamePlaying, SceneList::ReadyToFight, bgm_callback.clone());
     }
 
     fn on_exit(&mut self) {
-        let _ = gui_config().get_mut().save_config(true);
+        let _ = GUI_CONFIG().get_mut().save_config(true);
     }
 
     fn update(&mut self, ctx: &egui::CtxRef, frame: &epi::Frame) {
@@ -346,7 +361,7 @@ impl epi::App for GUI {
         self.update_bgm();
         
         // 動作
-        if let Err(e) = smashbrog_engine().get_mut().update() {
+        if let Err(e) = SMASHBROS_ENGINE().get_mut().update() {
             // quit
             // TODO:ゆくゆくはエラー回復とかもできるようにしたい
             log::error!("quit. [{}]", e);
@@ -385,7 +400,7 @@ impl WindowBattleInformation {
     }
 }
 impl GUIModelTrait for WindowBattleInformation {
-    fn name(&self) -> String { fl!(lang_loader().get(), "battle_information") }
+    fn name(&self) -> String { fl!(LANG_LOADER().get(), "battle_information") }
     fn show(&mut self, ctx: &egui::CtxRef) {
         egui::Window::new(self.name())
             .default_rect(Self::get_initial_window_rect())
@@ -394,11 +409,11 @@ impl GUIModelTrait for WindowBattleInformation {
 }
 impl GUIViewTrait for WindowBattleInformation {
     fn ui(&mut self, ui: &mut egui::Ui) {
-        if gui_config().get_mut().gui_state_config.battling {
+        if GUI_CONFIG().get_mut().gui_state_config.battling {
             self.battle_information.show_ui(ui, |_ui| {});
             ui.separator();
         }
-        self.wins_graph.show_ui( ui, fl!(lang_loader().get(), "gsp") );
+        self.wins_graph.show_ui( ui, fl!(LANG_LOADER().get(), "gsp") );
 
         ui.allocate_space(ui.available_size());
     }
@@ -474,7 +489,7 @@ impl WindowBattleHistory {
     // N 戦の履歴表示
     fn battle_history_view(&mut self, ui: &mut egui::Ui) {
         if WindowBattleInformationGroup::show_group_list_with_delete(ui, &mut self.battle_information_list) {
-            smashbrog_engine().get_mut().update_latest_n_data();
+            SMASHBROS_ENGINE().get_mut().update_latest_n_data();
         }
     }
 
@@ -485,35 +500,35 @@ impl WindowBattleHistory {
                 plot::Values::from_values(vec![plot::Value::new(-2.5, 0.0), plot::Value::new(25.5, 0.0), plot::Value::new(Self::CHARA_TABLE_WIDTH, 0.0)]),
             ).color(egui::Color32::RED)
             .fill(10.0)
-            .name(fl!(lang_loader().get(), "losing")),
+            .name(fl!(LANG_LOADER().get(), "losing")),
         );
         ui.line(
             plot::Line::new(
                 plot::Values::from_values(vec![plot::Value::new(-2.5, 10.0), plot::Value::new(25.5, 10.0), plot::Value::new(Self::CHARA_TABLE_WIDTH, 10.0)]),
             ).color(egui::Color32::LIGHT_RED)
             .fill(40.0)
-            .name(fl!(lang_loader().get(), "not_good"))
+            .name(fl!(LANG_LOADER().get(), "not_good"))
         );
         ui.line(
             plot::Line::new(
                 plot::Values::from_values(vec![plot::Value::new(-2.5, 40.0), plot::Value::new(25.5, 40.0), plot::Value::new(Self::CHARA_TABLE_WIDTH, 40.0)]),
             ).color(egui::Color32::YELLOW)
             .fill(60.0)
-            .name(fl!(lang_loader().get(), "just"))
+            .name(fl!(LANG_LOADER().get(), "just"))
         );
         ui.line(
             plot::Line::new(
                 plot::Values::from_values(vec![plot::Value::new(-2.5, 60.0), plot::Value::new(25.5, 60.0), plot::Value::new(Self::CHARA_TABLE_WIDTH, 60.0)]),
             ).color(egui::Color32::LIGHT_GREEN)
             .fill(90.0)
-            .name(fl!(lang_loader().get(), "good"))
+            .name(fl!(LANG_LOADER().get(), "good"))
         );
         ui.line(
             plot::Line::new(
                 plot::Values::from_values(vec![plot::Value::new(-2.5, 90.0), plot::Value::new(25.5, 90.0), plot::Value::new(Self::CHARA_TABLE_WIDTH, 90.0)]),
             ).color(egui::Color32::LIGHT_BLUE)
             .fill(100.0)
-            .name(fl!(lang_loader().get(), "winning"))
+            .name(fl!(LANG_LOADER().get(), "winning"))
         );
     }
 
@@ -534,7 +549,7 @@ impl WindowBattleHistory {
                             if !self.chara_plot_list.contains_key(chara_name) {
                                 continue;
                             }
-                            let chara_texture = match smashbros_resource().get().get_image_handle(chara_name.clone()) {
+                            let chara_texture = match SMASHBROS_RESOURCE().get_mut().get_image_handle(chara_name.clone()) {
                                 Some(chara_texture) => chara_texture,
                                 None => return,
                             };
@@ -564,7 +579,7 @@ impl WindowBattleHistory {
         let one_width = ui.available_size().x / 4.0;
         GUI::new_grid(GUIIdList::CharacterHistoryGrid, 4, egui::Vec2::new(5.0, 0.0))
             .show(ui, |ui| {
-                ui.checkbox( &mut self.is_exact_match, fl!(lang_loader().get(), "exact_match") );
+                ui.checkbox( &mut self.is_exact_match, fl!(LANG_LOADER().get(), "exact_match") );
                 ui.add_sized([one_width, 18.0],
                     egui::TextEdit::singleline(&mut self.find_character_list[0])
                         .hint_text("1p")
@@ -573,7 +588,7 @@ impl WindowBattleHistory {
                     egui::TextEdit::singleline(&mut self.find_character_list[1])
                         .hint_text("2p")
                 );
-                if ui.button(fl!( lang_loader().get(), "search" )).clicked() {
+                if ui.button(fl!( LANG_LOADER().get(), "search" )).clicked() {
                     // キャラ名推測をする
                     self.find_character_list = self.find_character_list.iter_mut().map(|chara_name| {
                         if let Some((new_chara_name, _)) = SmashbrosResource::convert_character_name(chara_name.to_uppercase()) {
@@ -584,7 +599,7 @@ impl WindowBattleHistory {
                     }).collect();
                     log::info!("search character history: {:?}", self.find_character_list);
 
-                    if let Some(data_list) = battle_history().get_mut().find_data_by_chara_list(self.find_character_list.clone(), 100, !self.is_exact_match) {
+                    if let Some(data_list) = BATTLE_HISTORY().get_mut().find_data_by_chara_list(self.find_character_list.clone(), 100, !self.is_exact_match) {
                         self.character_history_list.clear();
                         for data in data_list.clone() {
                             let mut battle_information = WindowBattleInformationGroup::default();
@@ -612,12 +627,12 @@ impl WindowBattleHistory {
             });
 
         ui.separator();
-        self.character_history_graph.show_ui( ui, fl!(lang_loader().get(), "passage") );
+        self.character_history_graph.show_ui( ui, fl!(LANG_LOADER().get(), "passage") );
         
         ui.separator();
         if WindowBattleInformationGroup::show_group_list_with_delete(ui, &mut self.character_history_list) {
-            smashbrog_engine().get_mut().update_latest_n_data();
-            smashbrog_engine().get_mut().update_chara_find_data();
+            SMASHBROS_ENGINE().get_mut().update_latest_n_data();
+            SMASHBROS_ENGINE().get_mut().update_chara_find_data();
         }
     }
 }
@@ -626,7 +641,7 @@ impl GUIModelTrait for WindowBattleHistory {
         self.find_character_list = vec![String::new(); 2];
         self.is_exact_match = true;
     }
-    fn name(&self) -> String { fl!(lang_loader().get(), "battle_history") }
+    fn name(&self) -> String { fl!(LANG_LOADER().get(), "battle_history") }
     fn show(&mut self, ctx: &egui::CtxRef) {
         egui::Window::new(self.name())
             .default_rect(Self::get_initial_window_rect())
@@ -638,9 +653,9 @@ impl GUIModelTrait for WindowBattleHistory {
 impl GUIViewTrait for WindowBattleHistory {
     fn ui(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.window_battle_history_tab, WindowBattleHistoryTab::BattleHistory, format!("{} {}", self.battle_information_list.len(), fl!(lang_loader().get(), "tab_battle_history")));
-            ui.selectable_value(&mut self.window_battle_history_tab, WindowBattleHistoryTab::CharacterTable, fl!(lang_loader().get(), "tab_character_table"));
-            ui.selectable_value(&mut self.window_battle_history_tab, WindowBattleHistoryTab::CharacterHistory, fl!(lang_loader().get(), "tab_character_history"));
+            ui.selectable_value(&mut self.window_battle_history_tab, WindowBattleHistoryTab::BattleHistory, format!("{} {}", self.battle_information_list.len(), fl!(LANG_LOADER().get(), "tab_battle_history")));
+            ui.selectable_value(&mut self.window_battle_history_tab, WindowBattleHistoryTab::CharacterTable, fl!(LANG_LOADER().get(), "tab_character_table"));
+            ui.selectable_value(&mut self.window_battle_history_tab, WindowBattleHistoryTab::CharacterHistory, fl!(LANG_LOADER().get(), "tab_character_history"));
         });
         ui.separator();
 
@@ -803,11 +818,11 @@ impl WindowConfiguration {
 
     pub fn update_bgm(&mut self) {
         // 選択されているデバイスを取得
-        let bgm_device_name = match gui_config().get_mut().bgm_device_name.as_ref() {
+        let bgm_device_name = match GUI_CONFIG().get_mut().bgm_device_name.as_ref() {
             Some(bgm_device_name) => bgm_device_name,
             None => return,
         };
-        let bgm_session_name = match gui_config().get_mut().bgm_session_name.as_ref() {
+        let bgm_session_name = match GUI_CONFIG().get_mut().bgm_session_name.as_ref() {
             Some(bgm_session_name) => bgm_session_name,
             None => return,
         };
@@ -821,7 +836,7 @@ impl WindowConfiguration {
 
         if let Some(before_volume) = self.before_volume {
             // BGM が停止していて、音量を変更した痕跡があるならもとに戻す
-            if sound_manager().get_mut().is_playing(Some(SoundType::Bgm)) {
+            if SOUND_MANAGER().get_mut().is_playing(Some(SoundType::Bgm)) {
                 return;
             }
             if let Err(err) = simple_audio_volume.set_master_volume(before_volume) {
@@ -830,14 +845,14 @@ impl WindowConfiguration {
             self.before_volume = None;
         } else {
             // 音量を変更する必要があり、BGM が再生中なら、現在の音量を記憶して変更する
-            if gui_config().get_mut().gui_state_config.disable_volume == 1.0 {
+            if GUI_CONFIG().get_mut().gui_state_config.disable_volume == 1.0 {
                 return;
             }
-            if !sound_manager().get_mut().is_playing(Some(SoundType::Bgm)) {
+            if !SOUND_MANAGER().get_mut().is_playing(Some(SoundType::Bgm)) {
                 return;
             }
             self.before_volume = Some(simple_audio_volume.get_master_volume().unwrap_or(1.0));
-            if let Err(err) = simple_audio_volume.set_master_volume(self.before_volume.unwrap_or(1.0) * gui_config().get_mut().gui_state_config.disable_volume) {
+            if let Err(err) = simple_audio_volume.set_master_volume(self.before_volume.unwrap_or(1.0) * GUI_CONFIG().get_mut().gui_state_config.disable_volume) {
                 log::error!("{}", err);
             }
         }
@@ -857,18 +872,18 @@ impl WindowConfiguration {
                 egui::ComboBox::from_id_source(GUIIdList::SourceKind)
                 .selected_text(format!("{}", self.capture_mode))
                 .show_ui(ui, |ui| {
-                    if ui.add(egui::SelectableLabel::new( self.capture_mode.is_empty(), fl!(lang_loader().get(), "empty") )).clicked() {
+                    if ui.add(egui::SelectableLabel::new( self.capture_mode.is_empty(), fl!(LANG_LOADER().get(), "empty") )).clicked() {
                         self.capture_mode = CaptureMode::new_empty();
                     }
-                    if ui.add(egui::SelectableLabel::new( self.capture_mode.is_window(), fl!(lang_loader().get(), "window") )).clicked() {
+                    if ui.add(egui::SelectableLabel::new( self.capture_mode.is_window(), fl!(LANG_LOADER().get(), "window") )).clicked() {
                         self.capture_mode = CaptureMode::new_window(self.window_caption.clone());
                         self.window_caption_list = CaptureFromWindow::get_window_list();
                     }
-                    if ui.add(egui::SelectableLabel::new( self.capture_mode.is_video_device(), fl!(lang_loader().get(), "video_device") )).clicked() {
+                    if ui.add(egui::SelectableLabel::new( self.capture_mode.is_video_device(), fl!(LANG_LOADER().get(), "video_device") )).clicked() {
                         self.capture_mode = CaptureMode::new_video_device(self.video_device_id);
                         self.video_device_list = CaptureFromVideoDevice::get_device_list();
                     }
-                    if ui.add(egui::SelectableLabel::new( self.capture_mode.is_desktop(), fl!(lang_loader().get(), "desktop") )).clicked() {
+                    if ui.add(egui::SelectableLabel::new( self.capture_mode.is_desktop(), fl!(LANG_LOADER().get(), "desktop") )).clicked() {
                         self.capture_mode = CaptureMode::new_desktop();
                     }
                 });
@@ -896,7 +911,7 @@ impl WindowConfiguration {
                             });
                     },
                     CaptureMode::VideoDevice(_, cm_device_id, _) => {
-                        let selected_text = format!( "{}", video_device_list.get(*cm_device_id as usize).unwrap_or(&fl!(lang_loader().get(), "unselected")) );
+                        let selected_text = format!( "{}", video_device_list.get(*cm_device_id as usize).unwrap_or(&fl!(LANG_LOADER().get(), "unselected")) );
                         let selected_text = Self::get_small_caption(selected_text.clone(), 40);
                         egui::ComboBox::from_id_source(GUIIdList::DeviceList)
                             .selected_text(selected_text)
@@ -916,10 +931,10 @@ impl WindowConfiguration {
         
                 // 状態の表示
                 ui.checkbox(
-                    &mut gui_config().get_mut().gui_state_config.show_captured,
+                    &mut GUI_CONFIG().get_mut().gui_state_config.show_captured,
                     format!(
-                        "{}:{:?} {}:{:.0}%", fl!(lang_loader().get(), "status"), self.now_scene,
-                        fl!(lang_loader().get(), "next"), self.prev_match_ratio * 100.0
+                        "{}:{:?} {}:{:.0}%", fl!(LANG_LOADER().get(), "status"), self.now_scene,
+                        fl!(LANG_LOADER().get(), "next"), self.prev_match_ratio * 100.0
                     )
                 );
             });
@@ -936,29 +951,29 @@ impl WindowConfiguration {
             .show(ui, |ui| {
                 // テーマ
                 let style = (*ui.ctx().style()).clone();
-                ui.label(fl!(lang_loader().get(), "theme"));
+                ui.label(fl!(LANG_LOADER().get(), "theme"));
                 ui.horizontal(|ui| {
                     if ui.add(egui::SelectableLabel::new(style.visuals == Visuals::dark(), "🌙 Dark")).clicked() {
                         ui.ctx().set_visuals(Visuals::dark());
-                        gui_config().get_mut().visuals = Some(Visuals::dark());
+                        GUI_CONFIG().get_mut().visuals = Some(Visuals::dark());
                     }
                     if ui.add(egui::SelectableLabel::new(style.visuals == Visuals::light(), "☀ Light")).clicked() {
                         ui.ctx().set_visuals(Visuals::light());
-                        gui_config().get_mut().visuals = Some(Visuals::light());
+                        GUI_CONFIG().get_mut().visuals = Some(Visuals::light());
                     }
                 });
                 ui.end_row();
 
                 // 言語
-                let now_lang = lang_loader().get().current_language();
-                let lang_list = lang_loader().get().available_languages(&Localizations).unwrap();
-                ui.label(fl!(lang_loader().get(), "language"));
+                let now_lang = LANG_LOADER().get().current_language();
+                let lang_list = LANG_LOADER().get().available_languages(&Localizations).unwrap();
+                ui.label(fl!(LANG_LOADER().get(), "language"));
                 egui::ComboBox::from_id_source(GUIIdList::LanguageComboBox)
                     .selected_text(format!("{}-{}", now_lang.language, now_lang.region.unwrap().as_str()))
                     .show_ui(ui, |ui| {
                         for lang in &lang_list {
                             if ui.add(egui::SelectableLabel::new(&now_lang == lang, format!("{}-{}", lang.language, lang.region.unwrap().as_str()))).clicked() {
-                                lang_loader().change(lang.clone());
+                                LANG_LOADER().change(lang.clone());
                             }
                         }
                     });
@@ -966,7 +981,7 @@ impl WindowConfiguration {
 
                 // フォント
                 use eframe::egui::Widget;
-                ui.label(fl!(lang_loader().get(), "font"));
+                ui.label(fl!(LANG_LOADER().get(), "font"));
                 ui.scope(|ui| {
                     // フォントサイズ
                     if egui::DragValue::new(&mut self.font_size)
@@ -999,90 +1014,90 @@ impl WindowConfiguration {
             .max_col_width(ui.available_size().x / 2.0)
             .show(ui, |ui| {
                 // 結果を取得する限界数
-                ui.label(fl!(lang_loader().get(), "result_max"));
-                if egui::DragValue::new(&mut gui_config().get_mut().result_max)
+                ui.label(fl!(LANG_LOADER().get(), "result_max"));
+                if egui::DragValue::new(&mut GUI_CONFIG().get_mut().result_max)
                     .clamp_range(1..=1000)
                     .speed(0.5)
                     .ui(ui).changed()
                 {
-                    smashbrog_engine().get_mut().change_result_max();
+                    SMASHBROS_ENGINE().get_mut().change_result_max();
                 }
                 ui.end_row();
 
                 // BGM で無効にした時の音量, デバイス, プロセス名
-                ui.label(&format!( "{} {}", fl!(lang_loader().get(), "disable"), fl!(lang_loader().get(), "volume") ));
-                egui::DragValue::new(&mut gui_config().get_mut().gui_state_config.disable_volume)
+                ui.label(&format!( "{} {}", fl!(LANG_LOADER().get(), "disable"), fl!(LANG_LOADER().get(), "volume") ));
+                egui::DragValue::new(&mut GUI_CONFIG().get_mut().gui_state_config.disable_volume)
                     .clamp_range(0.0..=1.0)
                     .speed(0.01)
                     .ui(ui);
                 ui.end_row();
 
-                let now_device_name = gui_config().get_mut().bgm_device_name.clone().unwrap_or(fl!(lang_loader().get(), "empty"));
+                let now_device_name = GUI_CONFIG().get_mut().bgm_device_name.clone().unwrap_or(fl!(LANG_LOADER().get(), "empty"));
                 egui::ComboBox::from_id_source(GUIIdList::BgmDeviceComboBox)
                     .selected_text(Self::get_small_caption( now_device_name.clone(), 10 ))
                     .show_ui(ui, |ui| {
                         for (device_name, _) in &self.bgm_device_list {
                             if ui.add(egui::SelectableLabel::new(&now_device_name == device_name, device_name)).clicked() {
-                                gui_config().get_mut().bgm_device_name = Some(device_name.clone());
+                                GUI_CONFIG().get_mut().bgm_device_name = Some(device_name.clone());
                             }
                         }
                     });
-                let now_session_name = gui_config().get_mut().bgm_session_name.clone().unwrap_or(fl!(lang_loader().get(), "empty"));
+                let now_session_name = GUI_CONFIG().get_mut().bgm_session_name.clone().unwrap_or(fl!(LANG_LOADER().get(), "empty"));
                 egui::ComboBox::from_id_source(GUIIdList::BgmSessionComboBox)
                     .selected_text(Self::get_small_caption( now_session_name.clone(), 10 ))
                     .show_ui(ui, |ui| {
                         for (session_name, _) in &self.bgm_device_list[&now_device_name] {
                             if ui.add(egui::SelectableLabel::new(&now_session_name == session_name, session_name)).clicked() {
-                                gui_config().get_mut().bgm_session_name = Some(session_name.clone());
+                                GUI_CONFIG().get_mut().bgm_session_name = Some(session_name.clone());
                             }
                         }
                     });
                 ui.end_row();
                 
                 // 代わりに再生する BGM リストフォルダ
-                ui.label(fl!(lang_loader().get(), "play_list"));
+                ui.label(fl!(LANG_LOADER().get(), "play_list"));
                 ui.add(
-                    egui::TextEdit::singleline(&mut gui_config().get_mut().bgm_playlist_folder)
-                        .hint_text(fl!(lang_loader().get(), "folder"))
+                    egui::TextEdit::singleline(&mut GUI_CONFIG().get_mut().bgm_playlist_folder)
+                        .hint_text(fl!(LANG_LOADER().get(), "folder"))
                 );
                 if !ui.ctx().input().raw.dropped_files.is_empty() {
                     if let Some(path_buf) = ui.ctx().input().raw.dropped_files[0].path.clone() {
                         if path_buf.is_dir() {
-                            gui_config().get_mut().bgm_playlist_folder = path_buf.to_string_lossy().to_string();
+                            GUI_CONFIG().get_mut().bgm_playlist_folder = path_buf.to_string_lossy().to_string();
                         }
                     }
                 }
                 ui.end_row();
 
                 // BGM リスト音量
-                ui.label(&format!( "{} {}", fl!(lang_loader().get(), "play_list"), fl!(lang_loader().get(), "volume") ));
-                ui.add_enabled_ui(!sound_manager().get().is_playing(Some(SoundType::Beep)), |ui| {
-                    egui::DragValue::new(&mut gui_config().get_mut().gui_state_config.play_list_volume)
+                ui.label(&format!( "{} {}", fl!(LANG_LOADER().get(), "play_list"), fl!(LANG_LOADER().get(), "volume") ));
+                ui.add_enabled_ui(!SOUND_MANAGER().get().is_playing(Some(SoundType::Beep)), |ui| {
+                    egui::DragValue::new(&mut GUI_CONFIG().get_mut().gui_state_config.play_list_volume)
                         .clamp_range(0.0..=1.0)
                         .speed(0.01)
                         .ui(ui);
-                    if ui.button(fl!(lang_loader().get(), "play")).clicked() {
-                        sound_manager().get_mut().set_volume(gui_config().get_mut().gui_state_config.play_list_volume);
-                        sound_manager().get_mut().beep(440.0, std::time::Duration::from_millis(500));
+                    if ui.button(fl!(LANG_LOADER().get(), "play")).clicked() {
+                        SOUND_MANAGER().get_mut().set_volume(GUI_CONFIG().get_mut().gui_state_config.play_list_volume);
+                        SOUND_MANAGER().get_mut().beep(440.0, std::time::Duration::from_millis(500));
                     }
                 });
                 ui.end_row();
 
                 // ストック警告
-                ui.label(&format!( "{} {}", fl!(lang_loader().get(), "stock"), fl!(lang_loader().get(), "warning") ));
+                ui.label(&format!( "{} {}", fl!(LANG_LOADER().get(), "stock"), fl!(LANG_LOADER().get(), "warning") ));
                 ui.scope(|ui| {
-                    egui::DragValue::new(&mut gui_config().get_mut().gui_state_config.stock_warning_under)
+                    egui::DragValue::new(&mut GUI_CONFIG().get_mut().gui_state_config.stock_warning_under)
                         .clamp_range(2..=4)
                         .ui(ui);
                     ui.add(
-                        egui::TextEdit::singleline(&mut gui_config().get_mut().stock_alert_command)
+                        egui::TextEdit::singleline(&mut GUI_CONFIG().get_mut().stock_alert_command)
                             .hint_text("command")
                     );
                 });
                 if !ui.ctx().input().raw.dropped_files.is_empty() {
                     if let Some(path_buf) = ui.ctx().input().raw.dropped_files[0].path.clone() {
                         if path_buf.is_file() {
-                            gui_config().get_mut().stock_alert_command = path_buf.to_string_lossy().to_string();
+                            GUI_CONFIG().get_mut().stock_alert_command = path_buf.to_string_lossy().to_string();
                         }
                     }
                 }
@@ -1094,23 +1109,23 @@ impl WindowConfiguration {
         GUI::new_grid(GUIIdList::CustomizeTab, 3, egui::Vec2::new(0.0, 5.0))
             .striped(true)
             .show(ui, |ui| {
-                ui.checkbox(&mut gui_config().get_mut().gui_state_config.chara_image, fl!(lang_loader().get(), "chara_image"));
-                ui.checkbox(&mut gui_config().get_mut().gui_state_config.win_rate, fl!(lang_loader().get(), "win_rate"));
-                ui.checkbox(&mut gui_config().get_mut().gui_state_config.wins, fl!(lang_loader().get(), "wins"));
+                ui.checkbox(&mut GUI_CONFIG().get_mut().gui_state_config.chara_image, fl!(LANG_LOADER().get(), "chara_image"));
+                ui.checkbox(&mut GUI_CONFIG().get_mut().gui_state_config.win_rate, fl!(LANG_LOADER().get(), "win_rate"));
+                ui.checkbox(&mut GUI_CONFIG().get_mut().gui_state_config.wins, fl!(LANG_LOADER().get(), "wins"));
                 ui.end_row();
 
-                ui.checkbox(&mut gui_config().get_mut().gui_state_config.win_lose, fl!(lang_loader().get(), "win_lose"));
-                ui.checkbox(&mut gui_config().get_mut().gui_state_config.graph, fl!(lang_loader().get(), "graph"));
-                ui.checkbox(&mut gui_config().get_mut().gui_state_config.gsp, fl!(lang_loader().get(), "gsp"));
+                ui.checkbox(&mut GUI_CONFIG().get_mut().gui_state_config.win_lose, fl!(LANG_LOADER().get(), "win_lose"));
+                ui.checkbox(&mut GUI_CONFIG().get_mut().gui_state_config.graph, fl!(LANG_LOADER().get(), "graph"));
+                ui.checkbox(&mut GUI_CONFIG().get_mut().gui_state_config.gsp, fl!(LANG_LOADER().get(), "gsp"));
                 ui.end_row();
 
-                ui.checkbox(&mut gui_config().get_mut().gui_state_config.battling, fl!(lang_loader().get(), "battling"));
+                ui.checkbox(&mut GUI_CONFIG().get_mut().gui_state_config.battling, fl!(LANG_LOADER().get(), "battling"));
                 ui.end_row();
             });
     }
 }
 impl GUIModelTrait for WindowConfiguration {
-    fn name(&self) -> String { fl!(lang_loader().get(), "config") }
+    fn name(&self) -> String { fl!(LANG_LOADER().get(), "config") }
     fn show(&mut self, ctx: &egui::CtxRef) {
         egui::Window::new( self.name() )
             .default_rect(Self::get_initial_window_rect())
@@ -1118,12 +1133,12 @@ impl GUIModelTrait for WindowConfiguration {
             .show(ctx, |ui| self.ui(ui));
     }
     fn setup(&mut self, ctx: &egui::CtxRef) {
-        if let Some(visuals) = gui_config().get_mut().visuals.as_ref() {
+        if let Some(visuals) = GUI_CONFIG().get_mut().visuals.as_ref() {
             ctx.set_visuals(visuals.clone());
         }
         self.video_device_id = -1;
         self.font_family_list = font_kit::source::SystemSource::new().all_families().unwrap();
-        match sound_manager().get_mut().load(gui_config().get_mut().bgm_playlist_folder.clone()) {
+        match SOUND_MANAGER().get_mut().load(GUI_CONFIG().get_mut().bgm_playlist_folder.clone()) {
             Ok(_) => (),
             Err(err) => log::error!("{}", err),
         }
@@ -1132,10 +1147,10 @@ impl GUIModelTrait for WindowConfiguration {
 impl GUIViewTrait for WindowConfiguration {
     fn ui(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.config_tab, ConfigTab::Source, fl!(lang_loader().get(), "tab_source"));
-            ui.selectable_value(&mut self.config_tab, ConfigTab::Appearance, fl!(lang_loader().get(), "tab_appearance"));
-            ui.selectable_value(&mut self.config_tab, ConfigTab::Detail, fl!(lang_loader().get(), "tab_detail"));
-            ui.selectable_value(&mut self.config_tab, ConfigTab::Customize, fl!(lang_loader().get(), "tab_customize"));
+            ui.selectable_value(&mut self.config_tab, ConfigTab::Source, fl!(LANG_LOADER().get(), "tab_source"));
+            ui.selectable_value(&mut self.config_tab, ConfigTab::Appearance, fl!(LANG_LOADER().get(), "tab_appearance"));
+            ui.selectable_value(&mut self.config_tab, ConfigTab::Detail, fl!(LANG_LOADER().get(), "tab_detail"));
+            ui.selectable_value(&mut self.config_tab, ConfigTab::Customize, fl!(LANG_LOADER().get(), "tab_customize"));
         });
         ui.separator();
 
@@ -1167,7 +1182,7 @@ impl WindowBattleInformationGroup {
             return false;
         }
 
-        if battle_history().get_mut().delete_data(self.data.as_ref().unwrap()).is_ok() {
+        if BATTLE_HISTORY().get_mut().delete_data(self.data.as_ref().unwrap()).is_ok() {
             log::info!("delete battle data: {:?}", self.data);
             self.data = None;
 
@@ -1213,8 +1228,8 @@ impl WindowBattleInformationGroup {
 
     // キャラと順位の表示
     fn show_player_chara(ui: &mut egui::Ui, data: &mut SmashbrosData, player_id: i32) {
-        let button = if let Some(order_texture) = smashbros_resource().get().get_order_handle(data.get_order(player_id)) {
-            let size = smashbros_resource().get().get_image_size(order_texture).unwrap();
+        let button = if let Some(order_texture) = SMASHBROS_RESOURCE().get_mut().get_order_handle(data.get_order(player_id)) {
+            let size = SMASHBROS_RESOURCE().get_mut().get_image_size(order_texture).unwrap();
             egui::Button::image_and_text(order_texture, size * egui::Vec2::new(0.25, 0.25), "")
         } else {
             egui::Button::new("?")
@@ -1582,7 +1597,7 @@ impl WindowWinsGraph {
                         .color(theme_color)
                         .name(format!("{}\n{}", plot_name, match self.kind {
                             WinsGraphKind::Gsp => format!("{}", if -1 == self.last_power {
-                                format!("{}", fl!(lang_loader().get(), "empty"))
+                                format!("{}", fl!(LANG_LOADER().get(), "empty"))
                             } else {
                                 format!("{}", self.last_power)
                             }),
@@ -1606,7 +1621,7 @@ impl WindowWinsGraph {
             }
 
             // キャラ画像
-            if gui_config().get_mut().gui_state_config.chara_image {
+            if GUI_CONFIG().get_mut().gui_state_config.chara_image {
                 ui.scope(|ui| {
                     if let Some(image) = GUI::get_chara_image(now_data.as_ref().get_character(0), [16.0, 16.0]) {
                         ui.add(image);
@@ -1622,7 +1637,7 @@ impl WindowWinsGraph {
                 });
             }
             // 勝率表示
-            if gui_config().get_mut().gui_state_config.win_rate {
+            if GUI_CONFIG().get_mut().gui_state_config.win_rate {
                 ui.scope(|ui| {
                     match self.kind {
                         WinsGraphKind::Gsp => {
@@ -1642,13 +1657,13 @@ impl WindowWinsGraph {
             }
 
             // 連勝表示
-            if gui_config().get_mut().gui_state_config.wins {
+            if GUI_CONFIG().get_mut().gui_state_config.wins {
                 ui.scope(|ui| {
                     ui.small(format!( "{}", self.wins ));
-                    ui.small(format!( "{}", fl!(lang_loader().get(), "wins") ));
+                    ui.small(format!( "{}", fl!(LANG_LOADER().get(), "wins") ));
                 });
             }
-            if gui_config().get_mut().gui_state_config.win_lose {
+            if GUI_CONFIG().get_mut().gui_state_config.win_lose {
                 ui.scope(|ui| {
                     match self.kind {
                         WinsGraphKind::Gsp => {
@@ -1673,29 +1688,29 @@ impl WindowWinsGraph {
         GUI::new_grid("wins_graph_group", 2, egui::Vec2::new(0.0, 0.0))
             .min_col_width(120.0)
             .show(ui, |ui| {
-                if gui_config().get_mut().gui_state_config.is_show_wins_group() {
+                if GUI_CONFIG().get_mut().gui_state_config.is_show_wins_group() {
                     self.show_wins_group(ui, available_size);
                 }
 
                 // 世界戦闘力グラフの表示
-                if gui_config().get_mut().gui_state_config.gsp {
-                    let font_size = gui_config().get_mut().font_size.unwrap_or(16);
+                if GUI_CONFIG().get_mut().gui_state_config.gsp {
+                    let font_size = GUI_CONFIG().get_mut().font_size.unwrap_or(16);
                     if Self::MAX_FONT_WIDTH < font_size {
                         // 見切れる場合は戦闘力を100万単位にする
                         let gsp = self.last_power as f32 / 10_000.0;
                         ui.scope(|ui| {
-                            let gsp_string = if -1 == self.last_power { fl!(lang_loader().get(), "empty") } else { format!( "{:.0}", gsp ) };
+                            let gsp_string = if -1 == self.last_power { fl!(LANG_LOADER().get(), "empty") } else { format!( "{:.0}", gsp ) };
                             ui.small(gsp_string);
-                            ui.small(format!( "{}", fl!(lang_loader().get(), "million") ));
+                            ui.small(format!( "{}", fl!(LANG_LOADER().get(), "million") ));
                         });
                     } else {
                         ui.scope(|ui| {
-                            let gsp_string = if -1 == self.last_power { fl!(lang_loader().get(), "empty") } else { format!( "{}", self.last_power ) };
+                            let gsp_string = if -1 == self.last_power { fl!(LANG_LOADER().get(), "empty") } else { format!( "{}", self.last_power ) };
                             ui.small(format!( "{}", gsp_string ));
-                            ui.small(format!( "{}", fl!(lang_loader().get(), "gsp") ));
+                            ui.small(format!( "{}", fl!(LANG_LOADER().get(), "gsp") ));
                         });
                     }
-                } else if gui_config().get_mut().gui_state_config.graph {
+                } else if GUI_CONFIG().get_mut().gui_state_config.graph {
                     self.show_graph(ui, &plot_name);
                 }
             });

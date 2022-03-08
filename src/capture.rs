@@ -16,7 +16,7 @@ use winapi::um::wingdi::*;
 use winapi::um::winnt::HANDLE;
 use winapi::um::winuser::*;
 
-use crate::resource::lang_loader;
+use crate::resource::LANG_LOADER;
 use crate::scene::{
     ReadyToFightScene,
     SceneTrait
@@ -35,13 +35,13 @@ pub enum CaptureMode {
     Window(String, String),
 }
 impl CaptureMode {
-    pub fn new_empty() -> Self { Self::Empty { 0: fl!(lang_loader().get(), "empty") } }
-    pub fn new_desktop() -> Self { Self::Desktop { 0: fl!(lang_loader().get(), "desktop") } }
+    pub fn new_empty() -> Self { Self::Empty { 0: fl!(LANG_LOADER().get(), "empty") } }
+    pub fn new_desktop() -> Self { Self::Desktop { 0: fl!(LANG_LOADER().get(), "desktop") } }
     pub fn new_video_device(device_id: i32) -> Self {
-        Self::VideoDevice { 0: fl!(lang_loader().get(), "video_device"), 1:device_id, 2:String::new() }
+        Self::VideoDevice { 0: fl!(LANG_LOADER().get(), "video_device"), 1:device_id, 2:String::new() }
     }
     pub fn new_window(win_caption: String) -> Self {
-        Self::Window { 0: fl!(lang_loader().get(), "window"), 1:win_caption }
+        Self::Window { 0: fl!(LANG_LOADER().get(), "window"), 1:win_caption }
     }
 
     pub fn is_default(&self) -> bool {

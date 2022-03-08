@@ -51,10 +51,10 @@ impl SceneJudgment {
     fn news_with_lang<T>(new_func: T, name: &str) -> Self
     where T: Fn(core::Mat, Option<core::Mat>) -> opencv::Result<Self>
     {
-        use crate::resource::lang_loader;
+        use crate::resource::LANG_LOADER;
         use i18n_embed::LanguageLoader;
 
-        let lang = lang_loader().get().current_language().language.clone();
+        let lang = LANG_LOADER().get().current_language().language.clone();
         let path = format!("resource/{}_{}", lang.as_str(), name);
 
         new_func(
@@ -226,7 +226,7 @@ pub enum SceneList {
     GameStart, GamePlaying, GameEnd, Result,
     Dialog, Loading, Unknown,
     
-    DecidedRules, EndResultReplay,
+    DecidedRules, DecidedBgm, EndResultReplay,
 }
 impl SceneList {
     /// i32 to SceneList
@@ -606,17 +606,17 @@ impl Default for HamVsSpamScene {
                     imgcodecs::imread("resource/rule_stock_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
                     Some(imgcodecs::imread("resource/rule_stock_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
                 ).unwrap()
-                .set_border(0.99),
+                .set_border(0.985),
             rule_time_scene_judgment: SceneJudgment::new(
                     imgcodecs::imread("resource/rule_time_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
                     Some(imgcodecs::imread("resource/rule_time_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
                 ).unwrap()
-                .set_border(0.99),
+                .set_border(0.985),
             rule_stamina_scene_judgment: SceneJudgment::new(
                     imgcodecs::imread("resource/rule_hp_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
                     Some(imgcodecs::imread("resource/rule_hp_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
                 ).unwrap()
-                .set_border(0.99),
+                .set_border(0.985),
             buffer: CaptureFrameStore::default(),
         }
     }
@@ -669,11 +669,10 @@ impl SceneTrait for HamVsSpamScene {
         } = self;
 
         buffer.replay_frame(|frame| {
-            let ref_frame = &frame;
-            Ok(
-                Self::captured_rules(ref_frame, smashbros_data, rule_stock_scene_judgment, rule_time_scene_judgment, rule_stamina_scene_judgment)?
-                & Self::captured_character_name(ref_frame, smashbros_data)?
-            )
+            Self::captured_rules(&frame, smashbros_data, rule_stock_scene_judgment, rule_time_scene_judgment, rule_stamina_scene_judgment)?;
+            Self::captured_character_name(&frame, smashbros_data)?;
+
+            Ok(false)
         })?;
 
         Ok(())
@@ -999,7 +998,7 @@ impl Default for GamePlayingScene {
                 .set_size(core::Rect{    // 参照される回数が多いので matchTemplate する大きさ減らす
                     x:0, y:100, width:640, height: 100
                 })
-                .set_border(0.85),
+                .set_border(0.95),
             stock_white_scene_judgment: SceneJudgment::new_gray(
                     imgcodecs::imread("resource/stock_hyphen_color_white.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
                     Some(imgcodecs::imread("resource/stock_hyphen_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
@@ -1007,7 +1006,7 @@ impl Default for GamePlayingScene {
                 .set_size(core::Rect{
                     x:0, y:100, width:640, height: 100
                 })
-                .set_border(0.85),
+                .set_border(0.95),
             buffer: CaptureFrameStore::default(),
             stock_number_mask: imgcodecs::imread("resource/stock_number_mask.png", imgcodecs::IMREAD_GRAYSCALE).unwrap()
         }
@@ -1157,9 +1156,9 @@ impl Default for GameEndScene {
     fn default() -> Self {
         Self {
             game_set_scene_judgment: SceneJudgment::new_gray_with_lang("game_set")
-                .set_border(0.90),
+                .set_border(0.85),
             time_up_scene_judgment: SceneJudgment::new_gray_with_lang("time_up")
-                .set_border(0.90),
+                .set_border(0.85),
         }
     }
 }
@@ -1293,10 +1292,10 @@ impl SceneTrait for ResultScene {
         let result_power_mask = &self.result_power_mask;
         let scene_judgment_list = &mut self.scene_judgment_list;
         self.buffer.replay_frame(|frame| {
-            Ok(
-                Self::captured_order(&frame, smashbros_data, scene_judgment_list)?
-                & Self::captured_power(&frame, smashbros_data, result_power_mask)?
-            )
+            Self::captured_order(&frame, smashbros_data, scene_judgment_list)?;
+            Self::captured_power(&frame, smashbros_data, result_power_mask)?;
+
+            Ok(false)
         })?;
         Ok(())
     }
@@ -1347,10 +1346,6 @@ impl ResultScene {
     pub fn captured_order(capture_image: &core::Mat, smashbros_data: &mut SmashbrosData, scene_judgment_list: &mut Vec<SceneJudgment>) -> opencv::Result<bool> {
         let index_by_player_max = smashbros_data.get_player_count()/2-1;
         for player_number in 0..smashbros_data.get_player_count() {
-            if smashbros_data.is_decided_order(player_number) {
-                continue;
-            }
-
             let order_number_pos = &Self::ORDER_AREA_POS[index_by_player_max as usize][player_number as usize];
             let order_number_area_image = core::Mat::roi(&capture_image.clone(),
                 core::Rect{x:order_number_pos.x, y:order_number_pos.y, width:80, height:80})?;
@@ -1367,7 +1362,7 @@ impl ResultScene {
             }
         }
 
-        Ok(false)
+        Ok(smashbros_data.all_decided_order())
     }
 
     // 戦闘力が検出されているフレームの処理
@@ -1383,16 +1378,10 @@ impl ResultScene {
         let (width, height) = (capture_image.cols(), capture_image.rows());
         let player_area_width = width / smashbros_data.get_player_count();
         let re = Regex::new(r"[^\d]+").unwrap();
-        let mut skip_count = 0;
-        for player_count in 0..smashbros_data.get_player_count() {
-            if smashbros_data.is_decided_power(player_count) {
-                // 既にプレイヤーのストックが確定しているならスキップ
-                skip_count += 1;
-                continue;
-            }
+        for player_number in 0..smashbros_data.get_player_count() {
             // 適当に小さくする
             let player_power_area = core::Rect {
-                x: player_area_width*player_count, y: height/4, width: player_area_width, height: height/2
+                x: player_area_width*player_number, y: height/4, width: player_area_width, height: height/2
             };
             let mut power_area_image = core::Mat::roi(&temp_capture_image, player_power_area)?;
             let gray_power_area_image = core::Mat::roi(&gray_number_area_image, player_power_area)?;
@@ -1412,11 +1401,11 @@ impl ResultScene {
 
             // tesseract で文字(数値)を取得して, 余計な文字を排除
             let text = &async_std::task::block_on(utils::run_ocr_with_number(&power_area_image, Some("0123456789"), false)).unwrap().to_string();
-            let number = re.split(text).collect::<Vec<&str>>().join(""); // 5桁まで (\d,\d,\d,\d,\d)
-            smashbros_data.guess_power( player_count, number.parse().unwrap_or(-1) );
+            let number = re.split(text).collect::<Vec<&str>>().join("");
+            smashbros_data.guess_power( player_number, number.parse().unwrap_or(-1) );
         }
 
-        Ok(smashbros_data.get_player_count() == skip_count)
+        Ok(smashbros_data.all_decided_power())
     }
 }
 
@@ -1436,8 +1425,17 @@ macro_rules! mut_now_data {
     };
 }
 
-// Scene イベントの型
-pub type SceneEvent = Box<dyn FnMut(&mut SmashbrosData) -> ()>;
+/// シーンイベントのコールバックの型
+pub type SceneEventCallback = Box<dyn FnMut(&mut SmashbrosData) -> ()>;
+pub type ManageEventCallback = Box< dyn FnMut(&mut SceneManager) -> Option<&mut Vec<SceneEventCallback>> >;
+pub type ManageEventConditions = Box<dyn FnMut(&SceneManager) -> bool>;
+
+struct ManageEventContent {
+    pub init_conditions: ManageEventConditions,
+    pub fire_conditions: ManageEventConditions,
+    pub manage_event_callback: ManageEventCallback,
+    pub is_fired: bool,
+}
 
 /// シーン全体を非同期で管理するクラス
 pub struct SceneManager {
@@ -1451,9 +1449,8 @@ pub struct SceneManager {
     pub prev_match_ratio: f64,
     pub prev_match_scene: SceneList,
     capture_image: core::Mat,
-    event_list: HashMap< (SceneList, SceneList), Vec<SceneEvent> >,
-    is_matched_rules: bool,
-    is_end_result_replay: bool,
+    scene_event_list: HashMap< (SceneList, SceneList), Vec<SceneEventCallback> >,
+    manage_event_list: Vec<ManageEventContent>,
 }
 impl Default for SceneManager {
     fn default() -> Self {
@@ -1477,20 +1474,74 @@ impl Default for SceneManager {
             prev_match_ratio: 0.0,
             prev_match_scene: SceneList::default(),
             capture_image: core::Mat::default(),
-            event_list: HashMap::new(),
-            is_matched_rules: false,
-            is_end_result_replay: false,
+            scene_event_list: HashMap::new(),
+            manage_event_list: Vec::new(),
         };
 
-        own.registory_event(SceneList::HamVsSpam, SceneList::GamePlaying, Box::new(|smashbros_data: &mut SmashbrosData| {
+        // DecidedRules イベントを定義
+        own.registory_manage_event(Box::new(|scene_manager: &SceneManager| {
+            scene_manager.now_scene == SceneList::Matching
+        }), Box::new(|scene_manager: &SceneManager| {
+            // ルールと最大ストック、時間が決まった時に DecidedRules を発行
+            scene_manager.ref_now_data().is_decided_rule_all_clause()
+        }), Box::new(|scene_manager: &mut SceneManager| {
+            log::info!("[{:?}] match [Unknown] to [DecidedRules]", scene_manager.now_scene);
+
+            scene_manager.scene_event_list.get_mut(&(SceneList::Unknown, SceneList::DecidedRules))
+        }));
+
+        // DecidedBgm イベントを定義
+        own.registory_manage_event(Box::new(|scene_manager: &SceneManager| {
+            scene_manager.now_scene == SceneList::Matching
+        }), Box::new(|scene_manager: &SceneManager| {
+            // BGM 名が決まった時に DecidedBgm を発行
+            scene_manager.ref_now_data().is_decided_bgm_name()
+        }), Box::new(|scene_manager: &mut SceneManager| {
+            log::info!("[{:?}] match [Unknown] to [DecidedBgm]", scene_manager.now_scene);
+
+            scene_manager.scene_event_list.get_mut(&(SceneList::Unknown, SceneList::DecidedBgm))
+        }));
+
+        // EndResultReplay イベントを定義
+        own.registory_manage_event(Box::new(|scene_manager: &SceneManager| {
+            if let Ok(result_scene) = scene_manager.scene_list[SceneList::Result as usize].downcast_ref::<ResultScene>() {
+                if result_scene.is_recoded() {
+                    // Result シーンの録画が終わると初期化
+                    return true;
+                }
+            }
+
+            false
+        }), Box::new(|scene_manager: &SceneManager| {
+            let result_scene = match scene_manager.scene_list[SceneList::Result as usize].downcast_ref::<ResultScene>() {
+                Ok(result_scene) => result_scene,
+                Err(_) => return false,
+            };
+
+            // 結果画面のリプレイが終わった時に EndResultReplay を発行
+            result_scene.buffer.is_replay_end() && scene_manager.sub_smashbros_data != SmashbrosData::default()
+        }), Box::new(|scene_manager: &mut SceneManager| {
+            log::info!("[{:?}] match [Unknown] to [EndResultReplay]", scene_manager.now_scene);
+
+            // 初期化されていなかったら sub を再び main にする
+            if scene_manager.smashbros_data.is_finished_battle() {
+                scene_manager.smashbros_data = scene_manager.sub_smashbros_data.clone();
+            }
+            scene_manager.sub_smashbros_data = SmashbrosData::default();
+
+            scene_manager.scene_event_list.get_mut(&(SceneList::Unknown, SceneList::EndResultReplay))
+        }));
+
+        // 試合の開始と終了
+        own.registory_scene_event(SceneList::HamVsSpam, SceneList::GamePlaying, Box::new(|smashbros_data: &mut SmashbrosData| {
             smashbros_data.start_battle();
         }));
-        own.registory_event(SceneList::GamePlaying, SceneList::GameEnd, Box::new(|smashbros_data: &mut SmashbrosData| {
+        own.registory_scene_event(SceneList::GamePlaying, SceneList::GameEnd, Box::new(|smashbros_data: &mut SmashbrosData| {
             smashbros_data.finish_battle();
         }));
 
-        own.registory_event(SceneList::Unknown, SceneList::DecidedRules, Box::new(|smashbros_data: &mut SmashbrosData| {
-            // 初期ストックの代入
+        // 初期ストックの代入
+        own.registory_scene_event(SceneList::Unknown, SceneList::DecidedRules, Box::new(|smashbros_data: &mut SmashbrosData| {
             match smashbros_data.get_rule() {
                 BattleRule::Stock | BattleRule::Stamina => {
                     for player_number in 0..smashbros_data.get_player_count() {
@@ -1500,8 +1551,9 @@ impl Default for SceneManager {
                 _ => (),
             }
         }));
-        own.registory_event(SceneList::Unknown, SceneList::EndResultReplay, Box::new(|smashbros_data: &mut SmashbrosData| {
-            // Result のリプレイが終わった時に一応 save/update しておく
+
+        // Result のリプレイが終わった時に一応 save/update しておく
+        own.registory_scene_event(SceneList::Unknown, SceneList::EndResultReplay, Box::new(|smashbros_data: &mut SmashbrosData| {
             if smashbros_data.get_id().is_some() {
                 smashbros_data.update_battle();
             } else {
@@ -1513,11 +1565,6 @@ impl Default for SceneManager {
     }
 }
 impl SceneManager {
-    // シーンが切り替わった際に呼ばれるイベントを登録する
-    pub fn registory_event(&mut self, before_scene: SceneList, after_scene: SceneList, callback: SceneEvent) {
-        self.event_list.entry((before_scene, after_scene)).or_insert(Vec::new()).push(callback);
-    }
-
     // 現在の検出されたデータの参照を返す
     pub fn ref_now_data(&self) -> &SmashbrosData {
         match SceneList::to_scene_list(self.now_scene as i32) {
@@ -1572,45 +1619,38 @@ impl SceneManager {
         self.prev_match_ratio
     }
 
+    // シーンが切り替わった際に呼ばれるイベントを登録する
+    pub fn registory_scene_event(&mut self, before_scene: SceneList, after_scene: SceneList, callback: SceneEventCallback) {
+        self.scene_event_list.entry((before_scene, after_scene)).or_insert(Vec::new()).push(callback);
+    }
+
+    // 複雑なイベントを登録する
+    pub fn registory_manage_event(&mut self, init_conditions: ManageEventConditions, fire_conditions: ManageEventConditions, manage_event_callback: ManageEventCallback) {
+        self.manage_event_list.push(ManageEventContent {
+            init_conditions,
+            fire_conditions,
+            manage_event_callback,
+            is_fired: true, // 初期状態では発火済みとして、初期化条件で初期化されるのを待つ
+        });
+    }
+
     // イベントの更新
     pub fn update_event(&mut self) {
-        // 結果画面のリプレイが終わった時に EndResultReplay を発行
-        if let Ok(result_scene) = self.scene_list[SceneList::Result as usize].downcast_ref::<ResultScene>() {
-            if self.is_end_result_replay {
-                if result_scene.is_recoded() {
-                    self.is_end_result_replay = false;
+        // 複雑なイベントの処理
+        for manage_event in &mut self.manage_event_list {
+            if manage_event.is_fired {
+                // 発火済みなら初期化条件を満たすまで監視
+                if manage_event.init_conditions.as_mut()(SCENE_MANAGER().get_mut()) {
+                    manage_event.is_fired = false;
                 }
-            } else {
-                if result_scene.buffer.is_replay_end() && self.sub_smashbros_data != SmashbrosData::default() {
-                    log::info!("[{:?}] match [Unknown] to [EndResultReplay]", self.now_scene);
-                    self.is_end_result_replay = true;
-                    if let Some(event_list) = self.event_list.get_mut(&(SceneList::Unknown, SceneList::EndResultReplay)) {
-                        for event in event_list {
-                            event.as_mut()(&mut self.sub_smashbros_data);
-                        }
-                    }
+            } else if manage_event.fire_conditions.as_mut()(SCENE_MANAGER().get_mut()) {
+                // 発火条件を満たしたら manage_event_callback が返す SceneEventCallback のリストを実行
+                manage_event.is_fired = true;
 
-                    // 初期化されていなかったら sub を再び main にする
-                    if self.smashbros_data.is_finished_battle() {
-                        self.smashbros_data = self.sub_smashbros_data.clone();
-                    }
-                    self.sub_smashbros_data = SmashbrosData::default();
-                }
-            }
-        }
-
-        // ルールと最大ストック、時間が決まった時に DecidedRules を発行
-        if self.is_matched_rules {
-            if self.now_scene == SceneList::Matching {
-                self.is_matched_rules = false;
-            }
-        } else {
-            if self.ref_now_data().is_decided_rule_all_clause() {
-                log::info!("[{:?}] match [Unknown] to [DecidedRules]", self.now_scene);
-                self.is_matched_rules = true;
-                if let Some(event_list) = self.event_list.get_mut(&(SceneList::Unknown, SceneList::DecidedRules)) {
-                    for event in event_list {
-                        event.as_mut()(&mut self.smashbros_data);
+                let now_scene = self.now_scene.clone();
+                if let Some(scene_event_list) = manage_event.manage_event_callback.as_mut()(SCENE_MANAGER().get_mut()) {
+                    for scene_event in scene_event_list {
+                        scene_event(mut_now_data!(self, now_scene));
                     }
                 }
             }
@@ -1642,8 +1682,8 @@ impl SceneManager {
             );
 
             // シーンが切り替わった際に呼ばれるイベントを発火
-            if let Some(event_list) = self.event_list.get_mut(&(self.now_scene, to_scene)) {
-                for event in event_list {
+            if let Some(scene_event_list) = self.scene_event_list.get_mut(&(self.now_scene, to_scene)) {
+                for event in scene_event_list {
                     event.as_mut()(mut_now_data!(self, index));
                 }
             }
@@ -1681,4 +1721,33 @@ impl SceneManager {
             scene.change_language();
         }
     }
+}
+
+/// シングルトンで SceneManager を保持するため
+pub struct WrappedSceneManager {
+    scene_manager: Option<SceneManager>,
+}
+impl WrappedSceneManager {
+    // 参照して返さないと、unwrap() で move 違反がおきてちぬ！
+    pub fn get(&mut self) -> &SceneManager {
+        if self.scene_manager.is_none() {
+            self.scene_manager = Some(SceneManager::default());
+        }
+        self.scene_manager.as_ref().unwrap()
+    }
+
+    // mut 版
+    pub fn get_mut(&mut self) -> &mut SceneManager {
+        if self.scene_manager.is_none() {
+            self.scene_manager = Some(SceneManager::default());
+        }
+        self.scene_manager.as_mut().unwrap()
+    }
+}
+static mut _SCENE_MANAGER: WrappedSceneManager = WrappedSceneManager {
+    scene_manager: None,
+};
+#[allow(non_snake_case)]
+pub fn SCENE_MANAGER() -> &'static mut WrappedSceneManager {
+    unsafe { &mut _SCENE_MANAGER }
 }

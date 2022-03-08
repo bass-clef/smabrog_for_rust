@@ -63,10 +63,6 @@ impl<K: std::hash::Hash + Clone + Eq> ValueGuesser<K> {
     /// 値を推測する
     /// using clone.
     pub fn guess(&mut self, value: &K) -> bool {
-        if self.is_decided() {
-            return false;
-        }
-
         *self.value_count_list.entry(value.clone()).or_insert(0) += 1;
 
         if self.max_count < self.value_count_list[value] {
@@ -836,7 +832,7 @@ impl SmashbrosData {
         // DBに保存するときだけ chara_list を ja に合わせておく(クエリを単純にするため)
         let back_chara_list = self.chara_list.clone();
         for i in 0..self.chara_list.len() {
-            if let Some(to_name) = smashbros_resource().get().i18n_convert_list.get(&self.chara_list[i].get()) {
+            if let Some(to_name) = SMASHBROS_RESOURCE().get_mut().i18n_convert_list.get(&self.chara_list[i].get()) {
                 // i18n_list にあるものだけ変換する
                 log::info!("saved i18n: {} -> {}", self.chara_list[i].get(), to_name);
                 self.chara_list[i].set(to_name.clone());
@@ -845,7 +841,7 @@ impl SmashbrosData {
 
         // データを保存
         self.db_collection_id = match self.player_count {
-            2 => battle_history().get_mut().insert_data(self),
+            2 => BATTLE_HISTORY().get_mut().insert_data(self),
             _ => None,
         };
 
@@ -861,7 +857,7 @@ impl SmashbrosData {
         // DBに保存するときだけ chara_list を ja に合わせておく(クエリを単純にするため)
         let back_chara_list = self.chara_list.clone();
         for i in 0..self.chara_list.len() {
-            if let Some(to_name) = smashbros_resource().get().i18n_convert_list.get(&self.chara_list[i].get()) {
+            if let Some(to_name) = SMASHBROS_RESOURCE().get_mut().i18n_convert_list.get(&self.chara_list[i].get()) {
                 // i18n_list にあるものだけ変換する
                 log::info!("saved i18n: {} -> {}", self.chara_list[i].get(), to_name);
                 self.chara_list[i].set(to_name.clone());
@@ -870,7 +866,7 @@ impl SmashbrosData {
 
         // データを保存
         let _db_collection_id = match self.player_count {
-            2 => battle_history().get_mut().update_data(self),
+            2 => BATTLE_HISTORY().get_mut().update_data(self),
             _ => None,
         };
 
@@ -1175,7 +1171,7 @@ impl SmashbrosData {
     }
     /// BGM リストに載っていて、許可されている BGM かどうか
     pub fn is_valid_bgm_name(&self) -> bool {
-        if let Some(bgm_value) = smashbros_resource().get().bgm_list.get(&self.bgm_name.get()) {
+        if let Some(bgm_value) = SMASHBROS_RESOURCE().get_mut().bgm_list.get(&self.bgm_name.get()) {
             return *bgm_value;
         }
 
@@ -1247,14 +1243,14 @@ mod tests {
         assert_eq!(data.is_decided_stock(0), true);
         assert_eq!(data.get_stock(0), 1);
 
-        // ストックの推測
+        // 順位からのストックの確定
         let mut data = SmashbrosData::default();
         data.initialize_battle(2, true);
-        for _ in 0..SmashbrosData::DEFAULT_STOCK_MAX_BORDER {
-            data.guess_stock(0, 1);
+        for _ in 0..ValueGuesser::<i32>::DEFAULT_MAX_BORDER {
+            data.guess_order(0, 1);
         }
         assert_eq!(data.is_decided_stock(1), true);
-        
+        assert_eq!(data.get_stock(1), 0);
     }
 
     #[test]

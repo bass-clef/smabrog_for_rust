@@ -94,12 +94,12 @@ impl SmashbrosResource {
 
     /// BGM 名が一致したものを返す。そうでない場合は推測して推測率と返す
     pub fn convert_bgm_list(maybe_bgm_name: String) -> Option<(String, f32)> {
-        if let Some(bgm_name) = smashbros_resource().get().bgm_list.iter().find(|&c| c.0 == &maybe_bgm_name) {
+        if let Some(bgm_name) = SMASHBROS_RESOURCE().get_mut().bgm_list.iter().find(|&c| c.0 == &maybe_bgm_name) {
             // 完全一致(公式名)
             return Some(( bgm_name.0.clone(), 1.0 ));
         } else {
             // 完全一致(公式名)から一番一致率が高い名前を設定する
-            let bgm_list = smashbros_resource().get().bgm_list.clone().into_keys().collect::<Vec<String>>();
+            let bgm_list = SMASHBROS_RESOURCE().get_mut().bgm_list.clone().into_keys().collect::<Vec<String>>();
             let (bgm_name, ratio) = Self::matcher(&bgm_list, &maybe_bgm_name, None);
             if !bgm_name.is_empty() {
                 return Some(( bgm_name, ratio ));
@@ -111,28 +111,28 @@ impl SmashbrosResource {
 
     /// キャラ名が一致したものを返す。そうでない場合は推測して推測率と返す
     pub fn convert_character_name(maybe_character_name: String) -> Option<(String, f32)> {
-        if smashbros_resource().get().character_list.contains_key(&maybe_character_name) {
+        if SMASHBROS_RESOURCE().get_mut().character_list.contains_key(&maybe_character_name) {
             // 完全一致(公式英名)
             return Some(( maybe_character_name.clone(), 1.0 ));
-        } else if let Some(chara_name) = smashbros_resource().get().character_list.iter().find(|&c| c.1 == &maybe_character_name) {
+        } else if let Some(chara_name) = SMASHBROS_RESOURCE().get_mut().character_list.iter().find(|&c| c.1 == &maybe_character_name) {
             // 完全一致(公式名)
             return Some(( chara_name.0.clone(), 1.0 ));
-        } else if let Some(chara_name) = smashbros_resource().get().i18n_convert_list.get(&maybe_character_name) {
+        } else if let Some(chara_name) = SMASHBROS_RESOURCE().get_mut().i18n_convert_list.get(&maybe_character_name) {
             // i18n(各言語名)
             return Some(( chara_name.clone(), 1.0 ));
         } else {
             // 完全一致(公式英名)から一番一致率が高い名前を設定する
-            let chara_list = smashbros_resource().get().character_list.clone().into_keys().collect::<Vec<String>>();
+            let chara_list = SMASHBROS_RESOURCE().get_mut().character_list.clone().into_keys().collect::<Vec<String>>();
             let (chara_name, ratio) = Self::matcher(&chara_list, &maybe_character_name, Some(SmashbrosData::CHARACTER_NAME_UNKNOWN));
             if chara_name != SmashbrosData::CHARACTER_NAME_UNKNOWN {
                 return Some(( chara_name, ratio ));
             }
 
             // 完全一致(公式名)から一番一致率が高い名前を設定する
-            let chara_list = smashbros_resource().get().character_list.clone().into_values().collect::<Vec<String>>();
+            let chara_list = SMASHBROS_RESOURCE().get_mut().character_list.clone().into_values().collect::<Vec<String>>();
             let (chara_name, ratio) = Self::matcher(&chara_list, &maybe_character_name, Some(SmashbrosData::CHARACTER_NAME_UNKNOWN));
             if chara_name != SmashbrosData::CHARACTER_NAME_UNKNOWN {
-                if let Some(( chara_name, _)) = smashbros_resource().get().character_list.iter().find(|&c| c.1 == &chara_name) {
+                if let Some(( chara_name, _)) = SMASHBROS_RESOURCE().get_mut().character_list.iter().find(|&c| c.1 == &chara_name) {
                     return Some(( chara_name.clone(), ratio ));
                 }
             }
@@ -195,7 +195,7 @@ impl WrappedSmashbrosResource {
     }
 
     // 参照して返さないと、unwrap() で move 違反がおきてちぬ！
-    pub fn get(&mut self) -> &mut SmashbrosResource {
+    pub fn get_mut(&mut self) -> &mut SmashbrosResource {
         if self.smashbros_resource.is_none() {
             log::error!("SmashbrosResource is not initialized. Call init() first.");
             self.smashbros_resource = Some(SmashbrosResource::new_for_test());
@@ -203,11 +203,12 @@ impl WrappedSmashbrosResource {
         self.smashbros_resource.as_mut().unwrap()
     }
 }
-static mut SMASHBROS_RESOURCE: WrappedSmashbrosResource = WrappedSmashbrosResource {
+static mut _SMASHBROS_RESOURCE: WrappedSmashbrosResource = WrappedSmashbrosResource {
     smashbros_resource: None,
 };
-pub fn smashbros_resource() -> &'static mut WrappedSmashbrosResource {
-    unsafe { &mut SMASHBROS_RESOURCE }
+#[allow(non_snake_case)]
+pub fn SMASHBROS_RESOURCE() -> &'static mut WrappedSmashbrosResource {
+    unsafe { &mut _SMASHBROS_RESOURCE }
 }
 
 // LanguageIdentifier の変換用
@@ -394,10 +395,11 @@ impl WrappedGUIConfig {
         self.gui_config.as_mut().unwrap()
     }
 }
-static mut GUI_CONFIG: WrappedGUIConfig = WrappedGUIConfig {
+static mut _GUI_CONFIG: WrappedGUIConfig = WrappedGUIConfig {
     gui_config: None,
 };
-pub fn gui_config() -> &'static mut WrappedGUIConfig {
-    unsafe { &mut GUI_CONFIG }
+#[allow(non_snake_case)]
+pub fn GUI_CONFIG() -> &'static mut WrappedGUIConfig {
+    unsafe { &mut _GUI_CONFIG }
 }
 

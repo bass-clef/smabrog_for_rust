@@ -5,15 +5,14 @@ use linked_hash_map::LinkedHashMap;
 use crate::capture::*;
 use crate::data::*;
 use crate::resource::{
-    battle_history,
-    gui_config,
+    BATTLE_HISTORY,
+    GUI_CONFIG,
 };
 use crate::scene::*;
 
 
 /// スマブラを管理するコントローラークラス
 pub struct SmashBrogEngine {
-    scene_manager: SceneManager,
     data_latest: Vec<SmashbrosData>,
     data_latest_by_chara: Vec<SmashbrosData>,
     data_all_by_chara: Vec<SmashbrosData>,
@@ -32,8 +31,7 @@ impl SmashBrogEngine {
 
     fn new() -> Self {
         let mut own = Self {
-            scene_manager: SceneManager::default(),
-            data_latest: battle_history().get_mut().find_data_limit(Self::DEFAULT_RESULT_LIMIT).unwrap_or(Vec::new()),
+            data_latest: BATTLE_HISTORY().get_mut().find_data_limit(Self::DEFAULT_RESULT_LIMIT).unwrap_or(Vec::new()),
             data_latest_by_chara: Vec::new(),
             data_all_by_chara: Vec::new(),
             result_max: Self::DEFAULT_RESULT_LIMIT,
@@ -41,9 +39,9 @@ impl SmashBrogEngine {
         };
 
         // 更新するタイミングを登録
-        own.scene_manager.registory_event(
+        SCENE_MANAGER().get_mut().registory_scene_event(
             SceneList::Unknown, SceneList::EndResultReplay,
-            Box::new(|_smashbros_data: &mut SmashbrosData| smashbrog_engine().get_mut().update_now_data() ),
+            Box::new(|_smashbros_data: &mut SmashbrosData| SMASHBROS_ENGINE().get_mut().update_now_data() ),
         );
         own.update_now_data();
 
@@ -120,7 +118,7 @@ impl SmashBrogEngine {
 
     /// 直近 result_max 件のデータを更新する
     pub fn update_latest_n_data(&mut self){
-        if let Some(data_latest) = battle_history().get_mut().find_data_limit(self.result_max) {
+        if let Some(data_latest) = BATTLE_HISTORY().get_mut().find_data_limit(self.result_max) {
             self.data_latest = data_latest;
         }
         self.is_updated = true;
@@ -131,10 +129,10 @@ impl SmashBrogEngine {
         let prev_chara_list = vec![
             self.get_now_data().get_character(0), self.get_now_data().get_character(1)
         ];
-        if let Some(data_latest_by_chara) = battle_history().get_mut().find_data_by_chara_list(prev_chara_list.clone(), Self::GET_LIMIT, false) {
+        if let Some(data_latest_by_chara) = BATTLE_HISTORY().get_mut().find_data_by_chara_list(prev_chara_list.clone(), Self::GET_LIMIT, false) {
             self.data_latest_by_chara = data_latest_by_chara;
         }
-        if let Some(data_all_by_chara) = battle_history().get_mut().find_data_by_chara_list(prev_chara_list.clone(), Self::FIND_LIMIT, true) {
+        if let Some(data_all_by_chara) = BATTLE_HISTORY().get_mut().find_data_by_chara_list(prev_chara_list.clone(), Self::FIND_LIMIT, true) {
             self.data_all_by_chara = data_all_by_chara;
         }
         self.is_updated = true;
@@ -144,7 +142,7 @@ impl SmashBrogEngine {
     pub fn update(&mut self) -> opencv::Result<()> {
         self.is_updated = false;
 
-        Ok( self.scene_manager.update_scene_list()? )
+        Ok( SCENE_MANAGER().get_mut().update_scene_list()? )
     }
 
     /// 検出方法の変更
@@ -171,7 +169,7 @@ impl SmashBrogEngine {
         };
 
         if let Ok(capture) = capture {
-            self.scene_manager.capture = capture;
+            SCENE_MANAGER().get_mut().capture = capture;
         }
 
         Ok(())
@@ -179,26 +177,26 @@ impl SmashBrogEngine {
 
     /// 言語の変更
     pub fn change_language(&mut self) {
-        self.scene_manager.change_language();
+        SCENE_MANAGER().get_mut().change_language();
     }
 
     /// 限界取得数の変更
     pub fn change_result_max(&mut self) {
-        if self.result_max == gui_config().get_mut().result_max {
+        if self.result_max == GUI_CONFIG().get_mut().result_max {
             return;
         }
         self.update_latest_n_data();
-        self.result_max = gui_config().get_mut().result_max;
+        self.result_max = GUI_CONFIG().get_mut().result_max;
     }
 
     /// シーンイベントの登録
-    pub fn registory_scene_event(&mut self, before_scene: SceneList, after_scene: SceneList, scene_event: SceneEvent) {
-        self.scene_manager.registory_event(before_scene, after_scene, scene_event);
+    pub fn registory_scene_event(&mut self, before_scene: SceneList, after_scene: SceneList, scene_event: SceneEventCallback) {
+        SCENE_MANAGER().get_mut().registory_scene_event(before_scene, after_scene, scene_event);
     }
 
     // 現在の検出されたデータの参照を返す
     pub fn ref_now_data(&self) -> &SmashbrosData {
-        self.scene_manager.ref_now_data()
+        SCENE_MANAGER().get_mut().ref_now_data()
     }
 
     /// 直近 result_max 件のデータを返す (result_max 未満も返る)
@@ -222,7 +220,7 @@ impl SmashBrogEngine {
     /// 現在対戦中のデータを返す
     pub fn get_now_data(&self) -> SmashbrosData {
         if self.data_latest.len() < 1 {
-            self.scene_manager.get_now_data()
+            SCENE_MANAGER().get_mut().get_now_data()
         } else {
             self.data_latest[0].clone()
         }
@@ -230,17 +228,17 @@ impl SmashBrogEngine {
 
     /// 現在検出中の Mat を返す
     pub fn get_now_image(&self) -> &opencv::core::Mat {
-        self.scene_manager.get_now_image()
+        SCENE_MANAGER().get_mut().get_now_image()
     }
 
     /// 現在検出中のシーン名を返す
     pub fn get_captured_scene(&self) -> SceneList {
-        self.scene_manager.get_now_scene()
+        SCENE_MANAGER().get_mut().get_now_scene()
     }
 
     /// 検出しようとしたシーンの前回の一致度合いを返す
     pub fn get_prev_match_ratio(&mut self) -> f64 {
-        self.scene_manager.get_prev_match_ratio()
+        SCENE_MANAGER().get_mut().get_prev_match_ratio()
     }
 }
 
@@ -265,9 +263,10 @@ impl WrappedSmashBrogEngine {
         self.smashbrog_engine.as_mut().unwrap()
     }
 }
-static mut SMASHBROS_ENGINE: WrappedSmashBrogEngine = WrappedSmashBrogEngine {
+static mut _SMASHBROS_ENGINE: WrappedSmashBrogEngine = WrappedSmashBrogEngine {
     smashbrog_engine: None,
 };
-pub fn smashbrog_engine() -> &'static mut WrappedSmashBrogEngine {
-    unsafe { &mut SMASHBROS_ENGINE }
+#[allow(non_snake_case)]
+pub fn SMASHBROS_ENGINE() -> &'static mut WrappedSmashBrogEngine {
+    unsafe { &mut _SMASHBROS_ENGINE }
 }
