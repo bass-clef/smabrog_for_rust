@@ -1,6 +1,7 @@
 #![cfg(windows)]
 #![windows_subsystem = "windows"]
 
+use dxcapture::*;
 use i18n_embed_fl::fl;
 use opencv::{
     core,
@@ -19,9 +20,8 @@ use winapi::um::winuser::*;
 use crate::resource::LANG_LOADER;
 use crate::scene::{
     ReadyToFightScene,
-    SceneTrait
+    SceneTrait,
 };
-use crate::utils::utils::to_wchar;
 
 
 // 検出する方法
@@ -280,7 +280,148 @@ impl CaptureDC {
 /// Hoge をキャプチャするクラス
 pub trait CaptureTrait {
     /// Mat を返す
-    fn get_mat(&mut self) -> opencv::Result<core::Mat>;
+    fn get_mat(&mut self) -> anyhow::Result<core::Mat>;
+}
+
+/// Hoge をキャプチャするにあたって必要な情報を保持する構造体
+#[derive(Debug)]
+pub struct CaptureBase {
+    pub prev_image: core::Mat,
+    pub dummy_data: core::Mat,
+    pub resolution: i32,
+    pub content_area: core::Rect,
+    pub offset_pos: core::Point,
+    is_resize: bool,
+}
+impl CaptureBase {
+    pub fn new() -> anyhow::Result<Self> {
+        Ok(Self {
+            prev_image: core::Mat::default(),
+            dummy_data: unsafe{ core::Mat::new_rows_cols(360, 640, core::CV_8UC3)? },
+            resolution: 40, // 16:9 * 40 == 640:360
+            content_area: core::Rect::new(0, 0, 640, 360),
+            offset_pos: core::Point::new(0, 0),
+            is_resize: false,
+        })
+    }
+
+    /// mat を与えると ReadyToFight を検出して、解像度, 大きさ, 座標 を自動で設定して作成する
+    pub fn new_from_some_types_mat(mat: core::Mat) -> anyhow::Result<Self> {
+        let mut own = Self::new()?;
+        let mut ready_to_fight_scene = ReadyToFightScene::new_trans();
+
+        let mut match_ready_to_fight = |image: &core::Mat| -> anyhow::Result<(f64, core::Point)> {
+            if image.empty() {
+                anyhow::bail!("not found ReadyToFight.");
+            }
+            if ready_to_fight_scene.is_scene(image, None)? {
+                let scene_judgment = ready_to_fight_scene.get_prev_match().unwrap();
+    
+                Ok((scene_judgment.prev_match_ratio, scene_judgment.prev_match_point))
+            } else {
+                anyhow::bail!("not found ReadyToFight.");
+            }
+        };
+
+        // 一致しない理由があるので mat を変更して特定する
+        // case.解像度が違う -> 解像度の特定が必要(ハイコスト)
+        // case.座標が違う   -> 検出位置の移動が必要
+        // case.大きさが違う -> リサイズが必要
+        let base_resolution = core::Size { width: 16, height: 9 };
+        let resolution_list = vec![40, 44, 50, 53, 60, 64, 70, 80, 90, 96, 100, 110, 120];
+        let mut most_better_ratio = 0.0;
+        for resolution in resolution_list {
+            own.resolution = resolution;
+            if let Ok((ratio, prev_match_point)) = match_ready_to_fight(&own.prev_image) {
+                most_better_ratio = ratio;
+                own.content_area.x = prev_match_point.x;
+                own.content_area.y = prev_match_point.y;
+                own.prev_image = core::Mat::roi(&mat, own.content_area)?;
+                break;
+            }
+
+            let exp_magnification = resolution as f32 / 40.0;
+            let resize = core::Size {
+                width: (40.0 / resolution as f32 * mat.cols() as f32) as i32,
+                height: (40.0 / resolution as f32 * mat.rows() as f32) as i32
+            };
+            imgproc::resize(&mat, &mut own.prev_image, resize, 0.0, 0.0, imgproc::INTER_LINEAR).unwrap();
+            if let Ok((ratio, prev_match_point)) = match_ready_to_fight(&own.prev_image) {
+                most_better_ratio = ratio;
+                own.is_resize = true;
+                own.content_area.x = (exp_magnification * prev_match_point.x as f32) as i32;
+                own.content_area.y = (exp_magnification * prev_match_point.y as f32) as i32;
+                own.content_area.width = own.resolution * base_resolution.width;
+                own.content_area.height = own.resolution * base_resolution.height;
+                break;
+            }
+
+        }
+
+        // 微調整
+        if mat.cols() < own.content_area.width || mat.rows() < own.content_area.height {
+            let content_area = own.content_area.clone();
+            let mut most_better_area = own.content_area.clone();
+            for y in [-1, 0, 1].iter() {
+                for x in [-1, 0, 1].iter() {
+                    // 切り取る領域が画面外に出る場合は調整できない
+                    if own.content_area.x + x < 0 || own.content_area.y + y < 0 || mat.cols() <= own.content_area.width + x || mat.rows() <= own.content_area.height + y {
+                        continue;
+                    }
+    
+                    own.content_area.x = content_area.x + x;
+                    own.content_area.y = content_area.y + y;
+                    own.convert_mat(mat.clone())?;
+                    if let Ok((ratio, _)) = match_ready_to_fight(&own.prev_image) {
+                        if most_better_ratio < ratio {
+                            most_better_ratio = ratio;
+                            most_better_area = own.content_area.clone();
+                        }
+                    }
+                }
+            }
+            own.content_area = most_better_area;
+        }
+
+        if 0.0 != most_better_ratio {
+            log::info!("match :{:?} {:3.3}%", own.content_area, most_better_ratio);
+            Ok(own)
+        } else {
+            anyhow::bail!("not found ReadyToFight.");
+        }
+    }
+
+    /// mat を ReadyToFight を検出できるように返す
+    pub fn get_mat(&mut self, mat: core::Mat) -> anyhow::Result<core::Mat> {
+        if self.convert_mat(mat.clone()).is_err() {
+            return Ok(self.prev_image.clone());
+        }
+
+        if self.prev_image.empty() {
+            return Ok(self.dummy_data.clone());
+        }
+
+        Ok(self.prev_image.try_clone()?)
+    }
+
+    /// 初期化した情報を元に mat を変更する
+    fn convert_mat(&mut self, mat: core::Mat) -> anyhow::Result<()> {
+        let mut mat = mat;
+        core::Mat::roi(&mat, self.content_area)?.copy_to(&mut mat)?;
+
+        if self.is_resize {
+            let resize = core::Size {
+                width: (40.0 / self.resolution as f32 * mat.cols() as f32) as i32,
+                height: (40.0 / self.resolution as f32 * mat.rows() as f32) as i32
+            };
+
+            imgproc::resize(&mat, &mut self.prev_image, resize, 0.0, 0.0, opencv::imgproc::INTER_LINEAR).unwrap();
+        } else {
+            self.prev_image = mat;
+        }
+
+        Ok(())
+    }
 }
 
 /// ビデオキャプチャ から Mat
@@ -290,7 +431,7 @@ pub struct CaptureFromVideoDevice {
     pub empty_data: core::Mat,
 }
 impl CaptureTrait for CaptureFromVideoDevice {
-    fn get_mat(&mut self) -> opencv::Result<core::Mat> {
+    fn get_mat(&mut self) -> anyhow::Result<core::Mat> {
         // video_capture が開かれていない(録画されていない) or 準備が整ってない
         if !self.video_capture.is_opened()? || !self.video_capture.grab()? {
             self.prev_image = self.empty_data.clone();
@@ -307,7 +448,7 @@ impl CaptureTrait for CaptureFromVideoDevice {
     }
 }
 impl CaptureFromVideoDevice {
-    pub fn new(index: i32) -> opencv::Result<Self> {
+    pub fn new(index: i32) -> anyhow::Result<Self> {
         let mut video_capture = match videoio::VideoCapture::new(index, videoio::CAP_DSHOW) {
             Ok(video_capture) => {
                 log::info!("capture video device {}.", index);
@@ -315,7 +456,7 @@ impl CaptureFromVideoDevice {
             },
             Err(e) => {
                 log::error!("{}", e);
-                return Err(e)
+                anyhow::bail!("{}", e)
             },
         };
         video_capture.set(opencv::videoio::CAP_PROP_FRAME_WIDTH, 640f64)?;
@@ -333,17 +474,17 @@ impl CaptureFromVideoDevice {
             Ok(capture_image) => capture_image,
             Err(e) => {
                 log::error!("{}", e);
-                return Err(e)
+                anyhow::bail!("{}", e)
             },
         };
 
         ready_to_fight_scene.is_scene(&capture_image, None).unwrap();
         let scene_judgment = ready_to_fight_scene.get_prev_match().unwrap();
         if !scene_judgment.is_near_match() {
-            return Err(opencv::Error::new(0, format!("not capture ReadyToFight. max ratio: {} < {}",
+            anyhow::bail!("not capture ReadyToFight. max ratio: {} < {}",
                 scene_judgment.prev_match_ratio,
-                scene_judgment.get_border_match_ratio())
-            ));
+                scene_judgment.get_border_match_ratio()
+            );
         }
 
         log::info!("match device:{:3.3}% id:{}", scene_judgment.prev_match_ratio, index);
@@ -373,154 +514,34 @@ impl CaptureFromVideoDevice {
 
 /// ウィンドウ から Mat
 pub struct CaptureFromWindow {
-    capture_dc: CaptureDC,
-    pub win_caption: String,
-    win_handle: winapi::shared::windef::HWND,
-    pub prev_image: core::Mat,
-    pub content_area: core::Rect,
+    pub base: CaptureBase,
+    _device: Device,
+    capture: Capture,
 }
 impl CaptureTrait for CaptureFromWindow {
-    fn get_mat(&mut self) -> opencv::Result<core::Mat> {
-        if self.win_handle.is_null() {
-            return Ok( unsafe{core::Mat::new_rows_cols(360, 640, core::CV_8UC4)}? );
-        }
+    fn get_mat(&mut self) -> anyhow::Result<core::Mat> {
+        let mat = self.capture.get_mat_frame()?;
 
-        if let Ok(mat) = self.capture_dc.get_mat(self.win_handle, Some(self.content_area), None) {
-            let resize = core::Size { width: 640, height: 360 };
-
-            if mat.cols() != resize.width || mat.rows() != resize.height {
-                self.prev_image.release()?;
-                imgproc::resize(&mat, &mut self.prev_image, resize, 0.0, 0.0, opencv::imgproc::INTER_LINEAR)?;
-            } else {
-                self.prev_image.release()?;
-                self.prev_image = mat;
-            }
-        }
-        Ok(self.prev_image.try_clone()?)
+        Ok(self.base.get_mat(mat.data)?)
     }
 }
 impl CaptureFromWindow {
-    pub fn new(win_caption: &str) -> opencv::Result<Self> {
-        let win_handle = unsafe {
-            winapi::um::winuser::FindWindowW(
-                std::ptr::null_mut(),
-                if win_caption.is_empty() { std::ptr::null_mut() } else { to_wchar(win_caption) }
-            )
-        };
-        if win_handle.is_null() {
-            return Err( opencv::Error::new(0, format!("window handle is null w[{:?}]", win_caption)) );
-        }
-        log::info!("found window handle: {}", win_handle as i64);
+    pub fn new(win_caption: &str) -> anyhow::Result<Self> {
+        let device = Device::new_from_window(win_caption.to_string())?;
+        let capture = Capture::new(&device)?;
+        let mat = capture.wait_mat_frame()?;
+        let base = CaptureBase::new_from_some_types_mat(mat.data)?;
 
-        // ウィンドウの大きさの設定
-        let mut client_rect = winapi::shared::windef::RECT { left:0, top:0, right:0, bottom:0 };
-        unsafe { winapi::um::winuser::GetClientRect(win_handle, &mut client_rect) };
-        let mut content_area = core::Rect {
-            x: client_rect.left, y: client_rect.top,
-            width: client_rect.right, height: client_rect.bottom
-        };
-
-        // 自身を作成して、予め CaptureDC へ大きさを渡しておく
-        let mut own = Self {
-            win_caption: win_caption.to_string(),
-            win_handle: win_handle,
-            prev_image: core::Mat::default(),
-            content_area: content_area,
-            capture_dc: CaptureDC::default(),
-        };
-        own.capture_dc.width = own.content_area.width;
-        own.capture_dc.height = own.content_area.height;
-
-        // 指定された領域で探す
-        let mut is_found = false;
-        let mut max_match_ratio = 0.0;
-        let mut ready_to_fight_scene = ReadyToFightScene::default();
-        let mut find_capture = |own: &mut Self, content_area: &core::Rect, | -> bool {
-            let capture_image = own.get_mat().unwrap();
-            if capture_image.empty() {
-                own.content_area = *content_area;
-                return false;
-            }
-
-            // より精度が高いほうを選択
-            ready_to_fight_scene.is_scene(&capture_image, None).unwrap();
-            let scene_judgment = ready_to_fight_scene.get_prev_match().unwrap();
-            if scene_judgment.is_near_match() && max_match_ratio < scene_judgment.prev_match_ratio {
-                is_found |= true;
-                max_match_ratio = scene_judgment.prev_match_ratio;
-                log::info!("match window:{:3.3}% {:?}", scene_judgment.prev_match_ratio, own.content_area);
-                return true;
-            }
-
-            false
-        };
-
-        // 微調整(大きさの変更での座標調整)
-        content_area = own.content_area;
-        'find_capture_resize: for y in [-1, 0, 1].iter() {
-            for x in [-1, 0, 1].iter() {
-                if own.content_area.x + x < 0 || own.content_area.y + y < 0 {
-                    continue;
-                }
-                own.content_area.x = content_area.x + x;
-                own.content_area.y = content_area.y + y;
-                if find_capture(&mut own, &content_area) {
-                    break 'find_capture_resize;
-                }
-                own.content_area = content_area;
-            }
-        }
-
-        // 微調整(解像度の変更での調整)
-        content_area = own.content_area;
-        own.content_area.width = 640;
-        own.content_area.height = 360;
-        if !find_capture(&mut own, &content_area) {
-            own.content_area = content_area;
-        }
-        
-        if !is_found {
-            return Err(opencv::Error::new(0, format!("not capture ReadyToFight. max ratio: {} < {}",
-                max_match_ratio,
-                ready_to_fight_scene.red_scene_judgment.get_border_match_ratio())
-            ));
-        }
-
-        Ok(own)
-    }
-
-    // EnumWindows 用のコールバック関数, lparam としてクロージャをもらい、ウィンドウを列挙して渡す
-    unsafe extern "system" fn enum_callback<T: FnMut(String)>(hwnd: winapi::shared::windef::HWND, lparam: isize) -> i32 {
-        if winapi::um::winuser::IsWindowVisible(hwnd) == winapi::shared::minwindef::FALSE {
-            return winapi::shared::minwindef::TRUE;
-        }
-
-        const BUF_SIZE: usize = 512;
-        let mut win_window_buffer: [u16; BUF_SIZE] = [0; BUF_SIZE];
-        let writed_length = GetWindowTextW(hwnd, win_window_buffer.as_mut_ptr(), BUF_SIZE as i32);
-        if 0 < writed_length {
-            let window_text_func = &mut *(lparam as *mut T);
-            window_text_func(String::from_utf16_lossy(&win_window_buffer[0..writed_length as usize]));
-        }
-
-        winapi::shared::minwindef::TRUE
-    }
-
-    // EnumWindows のコールバックをクロージャで呼べるようにするためのラッパー
-    fn enum_windows<T: FnMut(String)>(mut window_text_func: T) {
-        unsafe {
-            EnumWindows(Some(Self::enum_callback::<T>), &mut window_text_func as *mut _ as isize);
-        }
+        Ok(Self {
+            base,
+            _device: device,
+            capture,
+        })
     }
 
     /// ウィンドウ名を列挙して返す
     pub fn get_window_list() -> Vec<String> {
-        let mut window_list: Vec<String> = Vec::new();
-        Self::enum_windows(|win_caption: String| {
-            window_list.push(win_caption);
-        });
-
-        window_list
+        dxcapture::enumerate_windows().iter().map(|w| w.title.clone()).collect()
     }
 }
 
@@ -534,7 +555,7 @@ pub struct CaptureFromDesktop {
     resolution: i32,
 }
 impl CaptureTrait for CaptureFromDesktop {
-    fn get_mat(&mut self) -> opencv::Result<core::Mat> {
+    fn get_mat(&mut self) -> anyhow::Result<core::Mat> {
         if let Ok(mat) = self.capture_dc.get_mat(self.win_handle, Some(self.content_area), Some(self.monitor_lefttop)) {
             let resize = core::Size {
                 width: (40.0 / self.resolution as f32 * mat.cols() as f32) as i32,
@@ -632,7 +653,7 @@ pub struct CaptureFromEmpty {
     pub prev_image: core::Mat,
 }
 impl CaptureTrait for CaptureFromEmpty {
-    fn get_mat(&mut self) -> opencv::Result<core::Mat> { Ok(self.prev_image.try_clone()?) }
+    fn get_mat(&mut self) -> anyhow::Result<core::Mat> { Ok(self.prev_image.try_clone()?) }
 }
 impl CaptureFromEmpty {
     pub fn new() -> opencv::Result<Self> {

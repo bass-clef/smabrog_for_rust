@@ -151,18 +151,18 @@ impl SceneJudgment {
     }
 
     /// キャプチャされた画像とシーンとをテンプレートマッチングして、一致した確率と位置を返す
-    async fn match_captured_scene(&mut self, captured_image: &core::Mat) {
+    async fn match_captured_scene(&mut self, captured_image: &core::Mat) -> opencv::Result<()> {
         let mut result = core::Mat::default();
         let mut converted_captured_image = core::Mat::default();
         if let Some(image_size) = self.image_size {
             utils::cvt_color_to(
-                &core::Mat::roi(&captured_image, image_size).unwrap(),
+                &core::Mat::roi(&captured_image, image_size)?,
                 &mut converted_captured_image, self.judgment_type as i32
-            ).unwrap();
+            )?;
         } else {
-            utils::cvt_color_to(captured_image, &mut converted_captured_image, self.judgment_type as i32).unwrap();
+            utils::cvt_color_to(captured_image, &mut converted_captured_image, self.judgment_type as i32)?;
         }
-
+        
         match self.judgment_type {
             ColorFormat::NONE => (),
             ColorFormat::RGB | ColorFormat::GRAY => {
@@ -173,39 +173,36 @@ impl SceneJudgment {
                     // どうでもいいけどソースをみてそれに上書きしてほしいとき、同じ変数を指定できないの欠陥すぎね？？？(これが安全なメモリ管理か、、、。)
                     let mut temp_captured_image = converted_captured_image.clone();
 
-                    match core::bitwise_and(&converted_captured_image, &mask_image,
-                        &mut temp_captured_image, &core::no_array())
-                    {
-                        Ok(_) => (),
-                        Err(_e) => {
-                            // サイズの違いや色深度の違いでエラーになることがあるけど、マスクがかけられなかった
-                            return;
-                        },
-                    }
+                    // サイズの違いや色深度の違いでエラーになることがあるけど、マスクがかけられないこともある
+                    core::bitwise_and(&converted_captured_image, &mask_image,
+                        &mut temp_captured_image, &core::no_array())?;
+
                     converted_captured_image = temp_captured_image;
                 }
 
                 imgproc::match_template(&converted_captured_image, &self.color_image, &mut result,
-                    imgproc::TM_CCOEFF_NORMED, &core::no_array()).unwrap();
+                    imgproc::TM_CCOEFF_NORMED, &core::no_array())?;
             },
             ColorFormat::RGBA => {
                 // 透過画像の場合は普通に trans_mask 付きでテンプレートマッチング
                 // 透過画像の時はそもそも None の状態になることはない
                 if let Some(trans_mask_image) = &self.trans_mask_image {
                     imgproc::match_template(&converted_captured_image, &self.color_image, &mut result,
-                        imgproc::TM_CCORR_NORMED, &trans_mask_image).unwrap();
+                        imgproc::TM_CCORR_NORMED, &trans_mask_image)?;
                 }
             },
         };
 
-        core::patch_na_ns(&mut result, -0.0).unwrap();
-        utils::patch_inf_ns(&mut result, -0.0).unwrap();
+        core::patch_na_ns(&mut result, -0.0)?;
+        utils::patch_inf_ns(&mut result, -0.0)?;
 
         core::min_max_loc(&result,
             None, Some(&mut self.prev_match_ratio),
             None, Some(&mut self.prev_match_point),
             &core::no_array()
-        ).unwrap();
+        )?;
+
+        Ok(())
     }
 
     /// 前回のテンプレートマッチングで大体一致しているか
@@ -313,8 +310,8 @@ impl SceneTrait for LoadingScene {
 
     fn is_scene(&mut self, capture_image: &core::Mat, _smashbros_data: Option<&mut SmashbrosData>) -> opencv::Result<bool> {
         async_std::task::block_on(async {
-            self.scene_judgment.match_captured_scene(&capture_image).await;
-        });
+            self.scene_judgment.match_captured_scene(&capture_image).await
+        })?;
 
         Ok(self.scene_judgment.is_near_match())
     }
@@ -358,8 +355,8 @@ impl SceneTrait for DialogScene {
     
     fn is_scene(&mut self, capture_image: &core::Mat, _smashbros_data: Option<&mut SmashbrosData>) -> opencv::Result<bool> {
         async_std::task::block_on(async {
-            self.scene_judgment.match_captured_scene(&capture_image).await;
-        });
+            self.scene_judgment.match_captured_scene(&capture_image).await
+        })?;
 
         Ok(self.scene_judgment.is_near_match())
     }
@@ -420,13 +417,13 @@ impl SceneTrait for ReadyToFightScene {
         // 多分 grad版 ReadyToFight のほうが多いので先にする
         // (grad:カーソルが on_cursor の状態, red: わざとカーソルを READY to FIGHT からずらしている状態)
         async_std::task::block_on(async {
-            self.grad_scene_judgment.match_captured_scene(&capture_image).await;
+            self.grad_scene_judgment.match_captured_scene(&capture_image).await?;
             if self.grad_scene_judgment.is_near_match() {
-                return; // async-function
+                return Ok(()); // async-function
             }
 
-            self.red_scene_judgment.match_captured_scene(&capture_image).await;
-        });
+            self.red_scene_judgment.match_captured_scene(&capture_image).await
+        })?;
         
         Ok( self.grad_scene_judgment.is_near_match() || self.red_scene_judgment.is_near_match() )
     }
@@ -543,23 +540,23 @@ impl SceneTrait for MatchingScene {
     fn is_scene(&mut self, capture_image: &core::Mat, smashbros_data: Option<&mut SmashbrosData>) -> opencv::Result<bool> {
         // 多分 1on1 のほうが多いけど with 4 のほうにも 1on1 が一致するので with4 を先にする
         async_std::task::block_on(async {
-            // self.scene_judgment_smash_tournament.match_captured_scene(&capture_image).await;
+            // self.scene_judgment_smash_tournament.match_captured_scene(&capture_image).await?;
             // if self.scene_judgment_smash_tournament.is_near_match() {
             //     return;
             // }
 
-            self.scene_judgment_ooo_tournament.match_captured_scene(&capture_image).await;
+            self.scene_judgment_ooo_tournament.match_captured_scene(&capture_image).await?;
             if self.scene_judgment_ooo_tournament.is_near_match() {
-                return;
+                return Ok(());
             }
 
-            self.scene_judgment_with4.match_captured_scene(&capture_image).await;
+            self.scene_judgment_with4.match_captured_scene(&capture_image).await?;
             if self.scene_judgment_with4.is_near_match() {
-                return;
+                return Ok(());
             }
 
-            self.scene_judgment.match_captured_scene(&capture_image).await;
-        });
+            self.scene_judgment.match_captured_scene(&capture_image).await
+        })?;
 
         if let Some(smashbros_data) = smashbros_data {
             if self.scene_judgment.is_near_match() {
@@ -642,8 +639,8 @@ impl SceneTrait for HamVsSpamScene {
         }
 
         async_std::task::block_on(async {
-            self.vs_scene_judgment.match_captured_scene(&capture_image).await;
-        });
+            self.vs_scene_judgment.match_captured_scene(&capture_image).await
+        })?;
 
         if self.vs_scene_judgment.is_near_match() {
             imgcodecs::imwrite("ham_vs_spam.png", capture_image, &core::Vector::from(vec![]))?;
@@ -736,27 +733,26 @@ impl HamVsSpamScene {
         if !smashbros_data.is_decided_rule() {
             async_std::task::block_on(async {
                 // ストック制と検出(1on1: これがデフォルトで一番多いルール)
-                rule_stock_scene_judgment.match_captured_scene(capture_image).await;
+                rule_stock_scene_judgment.match_captured_scene(capture_image).await?;
                 if rule_stock_scene_judgment.is_near_match() {
                     smashbros_data.set_rule(BattleRule::Stock);
                     log::info!("rule: stock: {:2.3}%", rule_stock_scene_judgment.prev_match_ratio);
-                    return;
+                    return Ok(());
                 }
 
-                rule_time_scene_judgment.match_captured_scene(capture_image).await;
+                rule_time_scene_judgment.match_captured_scene(capture_image).await?;
                 if rule_time_scene_judgment.is_near_match() {
                     smashbros_data.set_rule(BattleRule::Time);
                     log::info!("rule: time {:2.3}%", rule_time_scene_judgment.prev_match_ratio);
-                    return;
+                    return Ok(());
                 }
 
-                rule_stamina_scene_judgment.match_captured_scene(capture_image).await;
-                if rule_stamina_scene_judgment.is_near_match() {
-                    smashbros_data.set_rule(BattleRule::Stamina);
-                    log::info!("rule: stamina {:2.3}%", rule_stamina_scene_judgment.prev_match_ratio);
-                    return;
-                }
-            });
+                rule_stamina_scene_judgment.match_captured_scene(capture_image).await
+            })?;
+            if rule_stamina_scene_judgment.is_near_match() {
+                smashbros_data.set_rule(BattleRule::Stamina);
+                log::info!("rule: stamina {:2.3}%", rule_stamina_scene_judgment.prev_match_ratio);
+            }
         }
 
         // 各ルール条件の検出
@@ -884,11 +880,11 @@ pub struct GameStartScene {
 impl Default for GameStartScene {
     fn default() -> Self {
         Self {
-            scene_judgment: SceneJudgment::new_trans(
-                    imgcodecs::imread("resource/battle_time_zero_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
-                    Some(imgcodecs::imread("resource/battle_time_zero_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
+            scene_judgment: SceneJudgment::new(
+                    imgcodecs::imread("resource/battle_time_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
+                    Some(imgcodecs::imread("resource/battle_time_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
                 ).unwrap()
-                .set_border(0.8),
+                .set_border(0.95),
             is_scene: false,
         }
     }
@@ -910,13 +906,16 @@ impl SceneTrait for GameStartScene {
     // 右上の 00.00 が表示されている場所に ある程度の確率で検出してればよしとする
     // (背景がステージによって全然違うのでマスク処理するのが難しい)
     fn is_scene(&mut self, capture_image: &core::Mat, smashbros_data: Option<&mut SmashbrosData>) -> opencv::Result<bool> {
-        let time_zero_area = core::Mat::roi( capture_image, core::Rect {x:566, y:11, width:62, height:27}).unwrap();
+        // let time_zero_area = core::Mat::roi( capture_image, core::Rect {x:566, y:11, width:62, height:27}).unwrap();
         async_std::task::block_on(async {
-            self.scene_judgment.match_captured_scene(&time_zero_area).await;
-        });
+            self.scene_judgment.match_captured_scene(&capture_image).await
+        })?;
 
         if self.scene_judgment.is_near_match() {
-            self.is_scene = true;
+            if !self.is_scene {
+                self.is_scene = true;
+                log::info!("[GameStartBegin]({:2.3}%)", self.scene_judgment.prev_match_ratio);
+            }
             if let Some(smashbros_data) = smashbros_data {
                 self.captured_count_down(capture_image, smashbros_data)?;
             }
@@ -1048,11 +1047,7 @@ impl SceneTrait for GamePlayingScene {
 
     fn recoding_scene(&mut self, capture_image: &core::Mat) -> opencv::Result<()> { self.buffer.recoding_frame(capture_image) }
     fn is_recoded(&self) -> bool { self.buffer.is_filled() }
-    fn detect_data(&mut self, smashbros_data: &mut SmashbrosData) -> opencv::Result<()> {
-        let stock_number_mask = &self.stock_number_mask;
-        self.buffer.replay_frame(|frame| {
-            Self::captured_stock_number(&frame, smashbros_data, stock_number_mask)
-        })?;
+    fn detect_data(&mut self, _smashbros_data: &mut SmashbrosData) -> opencv::Result<()> {
         Ok(())
     }
 }
@@ -1079,20 +1074,17 @@ impl GamePlayingScene {
             return Ok(false);
         }
 
-        if !self.buffer.is_recoding_started() {
-            async_std::task::block_on(async {
-                self.stock_black_scene_judgment.match_captured_scene(&capture_image).await;
-                if self.stock_black_scene_judgment.is_near_match() {
-                    return; // async-function
-                }
-                
-                self.stock_white_scene_judgment.match_captured_scene(&capture_image).await;
-            });
-        }
+        async_std::task::block_on(async {
+            self.stock_black_scene_judgment.match_captured_scene(&capture_image).await?;
+            if self.stock_black_scene_judgment.is_near_match() {
+                return Ok(()); // async-function
+            }
+            
+            self.stock_white_scene_judgment.match_captured_scene(&capture_image).await
+        })?;
 
         if self.stock_black_scene_judgment.is_near_match() || self.stock_white_scene_judgment.is_near_match() {
-            self.buffer.start_recoding_by_time(std::time::Duration::from_secs(1));
-            self.buffer.recoding_frame(capture_image)?;
+            Self::captured_stock_number(&capture_image, smashbros_data, &self.stock_number_mask)?;
         }
 
         Ok(false)
@@ -1184,13 +1176,13 @@ impl SceneTrait for GameEndScene {
     fn is_scene(&mut self, capture_image: &core::Mat, _smashbros_data: Option<&mut SmashbrosData>) -> opencv::Result<bool> {
         // おそらく、ストック制を選択してる人のほうが多い(もしくは時間より先に決着がつくことが多い)
         async_std::task::block_on(async {
-            self.game_set_scene_judgment.match_captured_scene(&capture_image).await;
+            self.game_set_scene_judgment.match_captured_scene(&capture_image).await?;
             if self.game_set_scene_judgment.is_near_match() {
-                return; // async-function
+                return Ok(()); // async-function
             }
 
-            self.time_up_scene_judgment.match_captured_scene(&capture_image).await;
-        });
+            self.time_up_scene_judgment.match_captured_scene(&capture_image).await
+        })?;
 
         Ok(self.game_set_scene_judgment.is_near_match() || self.time_up_scene_judgment.is_near_match())
     }
@@ -1231,7 +1223,7 @@ impl Default for ResultScene {
                 imgcodecs::imread("resource/result_time_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
                 Some(imgcodecs::imread("resource/result_time_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
             ).unwrap()
-            .set_border(0.55),
+            .set_border(0.90),
             retry_battle_scene_judgment: SceneJudgment::new(
                 imgcodecs::imread("resource/battle_retry_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
                 Some(imgcodecs::imread("resource/battle_retry_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
@@ -1255,8 +1247,8 @@ impl SceneTrait for ResultScene {
     // ResultScene の後に検出するシーンがないので、結果の検出だけ行う
     fn is_scene(&mut self, capture_image: &core::Mat, smashbros_data: Option<&mut SmashbrosData>) -> opencv::Result<bool> {
         async_std::task::block_on(async {
-            self.count_down_scene_judgment.match_captured_scene(capture_image).await;
-        });
+            self.count_down_scene_judgment.match_captured_scene(capture_image).await
+        })?;
         if !self.count_down_scene_judgment.is_near_match() {
             return Ok(false);
         }
@@ -1278,8 +1270,8 @@ impl SceneTrait for ResultScene {
 
     fn recoding_scene(&mut self, capture_image: &core::Mat) -> opencv::Result<()> {
         async_std::task::block_on(async {
-            self.retry_battle_scene_judgment.match_captured_scene(capture_image).await;
-        });
+            self.retry_battle_scene_judgment.match_captured_scene(capture_image).await
+        })?;
         if self.retry_battle_scene_judgment.is_near_match() {
             // 「同じ相手との再戦を希望しますか？」のダイアログに一致してしまうと誤検出するので、そのフレームだけダミーの Mat を渡す
             self.buffer.recoding_frame(&core::Mat::default())
@@ -1353,12 +1345,11 @@ impl ResultScene {
             for order_count in 0..smashbros_data.get_player_count() {
                 let scene_judgment = &mut scene_judgment_list[order_count as usize];
                 async_std::task::block_on(async {
-                    scene_judgment.match_captured_scene(&order_number_area_image).await;
-
-                    if scene_judgment.is_near_match() {
-                        smashbros_data.guess_order(player_number, order_count+1);
-                    }
-                });
+                    scene_judgment.match_captured_scene(&order_number_area_image).await
+                })?;
+                if scene_judgment.is_near_match() {
+                    smashbros_data.guess_order(player_number, order_count+1);
+                }
             }
         }
 
@@ -1523,12 +1514,6 @@ impl Default for SceneManager {
         }), Box::new(|scene_manager: &mut SceneManager| {
             log::info!("[{:?}] match [Unknown] to [EndResultReplay]", scene_manager.now_scene);
 
-            // 初期化されていなかったら sub を再び main にする
-            if scene_manager.smashbros_data.is_finished_battle() {
-                scene_manager.smashbros_data = scene_manager.sub_smashbros_data.clone();
-            }
-            scene_manager.sub_smashbros_data = SmashbrosData::default();
-
             scene_manager.scene_event_list.get_mut(&(SceneList::Unknown, SceneList::EndResultReplay))
         }));
 
@@ -1553,12 +1538,18 @@ impl Default for SceneManager {
         }));
 
         // Result のリプレイが終わった時に一応 save/update しておく
-        own.registory_scene_event(SceneList::Unknown, SceneList::EndResultReplay, Box::new(|smashbros_data: &mut SmashbrosData| {
-            if smashbros_data.get_id().is_some() {
-                smashbros_data.update_battle();
+        own.registory_scene_event(SceneList::Unknown, SceneList::EndResultReplay, Box::new(|_smashbros_data: &mut SmashbrosData| {
+            if SCENE_MANAGER().get_mut().sub_smashbros_data.get_id().is_some() {
+                SCENE_MANAGER().get_mut().sub_smashbros_data.update_battle();
             } else {
-                smashbros_data.save_battle();
+                SCENE_MANAGER().get_mut().sub_smashbros_data.save_battle();
             }
+
+            // Tournament初期化されていなかったら sub を再び main にする
+            if SCENE_MANAGER().get_mut().smashbros_data.is_finished_battle() {
+                SCENE_MANAGER().get_mut().smashbros_data = SCENE_MANAGER().get_mut().sub_smashbros_data.clone();
+            }
+            SCENE_MANAGER().get_mut().sub_smashbros_data = SmashbrosData::default();
         }));
 
         own
@@ -1697,7 +1688,7 @@ impl SceneManager {
     }
 
     // 全てのシーンを更新する
-    pub fn update_scene_list(&mut self) -> opencv::Result<()> {
+    pub fn update_scene_list(&mut self) -> anyhow::Result<()> {
         let capture_image = self.capture.get_mat()?;
         self.capture_image = capture_image.clone();
 

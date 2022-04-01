@@ -139,7 +139,7 @@ impl SmashBrogEngine {
     }
 
     /// どっかのメインループで update する用
-    pub fn update(&mut self) -> opencv::Result<()> {
+    pub fn update(&mut self) -> anyhow::Result<()> {
         self.is_updated = false;
 
         Ok( SCENE_MANAGER().get_mut().update_scene_list()? )
@@ -147,23 +147,23 @@ impl SmashBrogEngine {
 
     /// 検出方法の変更
     /// @result bool 0:問題なし
-    pub fn change_capture_mode(&mut self, capture_mode: &CaptureMode) -> opencv::Result<()> {
+    pub fn change_capture_mode(&mut self, capture_mode: &CaptureMode) -> anyhow::Result<()> {
         if capture_mode.is_default() {
-            return Err(opencv::Error::new(opencv::core::StsError, "is default capture mode".to_string()));
+            anyhow::bail!("is default capture mode");
         }
 
         let capture: opencv::Result<Box<dyn CaptureTrait>> = match capture_mode {
             CaptureMode::Desktop(_) => match CaptureFromDesktop::new() {
-                Err(e) => return Err(e),
+                Err(e) => anyhow::bail!(e),
                 Ok(capture) => Ok(Box::new(capture)),
             },
             CaptureMode::Empty(_) => Ok(Box::new(CaptureFromEmpty::new().unwrap())),
             CaptureMode::VideoDevice(_, device_id, _) => match CaptureFromVideoDevice::new(*device_id) {
-                Err(e) => return Err(e),
+                Err(e) => anyhow::bail!(e),
                 Ok(capture) => Ok(Box::new(capture)),
             },
             CaptureMode::Window(_, win_caption) => match CaptureFromWindow::new(win_caption) {
-                Err(e) => return Err(e),
+                Err(e) => anyhow::bail!(e),
                 Ok(capture) => Ok(Box::new(capture)),
             },
         };
