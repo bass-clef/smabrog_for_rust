@@ -30,10 +30,6 @@ use std::io::BufReader;
 use crate::data::SmashbrosData;
 
 
-// #[cfg(dependencies = "iced")]
-// pub mod iced_resource;
-// use iced_resource::SmashbrosResource;
-
 // #[cfg(dependencies = "eframe")]
 pub mod eframe_resource;
 pub use eframe_resource::{
@@ -408,6 +404,10 @@ impl SoundManager {
 
     // path を精査して、BGM リストを作成する
     pub fn load(&mut self, path: String) -> Result<(), anyhow::Error> {
+        if path.is_empty() {
+            return Ok(());
+        }
+
         let path = std::path::PathBuf::from(path);
         let dir = match path.read_dir() {
             Ok(dir) => dir,

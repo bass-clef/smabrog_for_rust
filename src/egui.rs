@@ -71,8 +71,8 @@ enum GUIIdList {
 // GUI の子ウィンドウが持つ
 trait GUIModelTrait {
     fn name(&self) -> String;
-    fn show(&mut self, ctx: &egui::CtxRef);
-    fn setup(&mut self, _ctx: &egui::CtxRef) {}
+    fn show(&mut self, ctx: &egui::Context);
+    fn setup(&mut self, _ctx: &egui::Context) {}
 }
 trait  GUIViewTrait {
     fn ui(&mut self, ui: &mut egui::Ui);
@@ -109,9 +109,9 @@ impl GUI {
     }
 
     // data の player_id のキャラ画像を指定 size で返す
-    pub fn get_chara_image(chara_name: String, size: [f32; 2]) -> Option<egui::Image> {
+    pub fn get_chara_image(chara_name: String, size: egui::Vec2) -> Option<egui::Image> {
         if let Some(chara_texture) = SMASHBROS_RESOURCE().get_mut().get_image_handle(chara_name) {
-            return Some(egui::Image::new(chara_texture, egui::Vec2::new(size[0], size[1])));
+            return Some(egui::Image::new( chara_texture.id(), size ));
         }
 
         None
@@ -124,7 +124,7 @@ impl GUI {
     pub fn get_title_bar_height() -> f32 { 32.0 }
 
     // フォントの設定
-    pub fn set_font(ctx: &egui::CtxRef, font_family: Option<String>, font_size: i32) {
+    pub fn set_font(ctx: &egui::Context, font_family: Option<String>, font_size: i32) {
         let default_fonts = (
             "Mamelon".to_string(),
             egui::FontData::from_static(include_bytes!("../fonts/Mamelon-5-Hi-Regular.otf"))
@@ -144,21 +144,22 @@ impl GUI {
             None => default_fonts,
         };
 
+        // font の追加
         let mut fonts = egui::FontDefinitions::default();
         fonts.font_data.insert(font_datas.0.clone(), font_datas.1);
-        fonts.fonts_for_family
-            .get_mut(&egui::FontFamily::Proportional)
-            .unwrap()
+        fonts.families
+            .get_mut(&egui::FontFamily::Proportional).unwrap()
             .insert(0, font_datas.0.clone());
-
-        fonts.family_and_size.insert(egui::TextStyle::Heading, (egui::FontFamily::Proportional, 16.0));
-        fonts.family_and_size.insert(egui::TextStyle::Button, (egui::FontFamily::Proportional, 12.0));
-        fonts.family_and_size.insert(egui::TextStyle::Body, (egui::FontFamily::Proportional, 12.0));
-
-        let font_size_base = font_size as f32;
-        fonts.family_and_size.insert(egui::TextStyle::Small, (egui::FontFamily::Proportional, font_size_base));
-
         ctx.set_fonts(fonts);
+
+        // デフォルトの大きさの変更と独自の大きさを定義する
+        let mut default_style: egui::Style = (*ctx.style()).clone();
+        let font_size_base = font_size as f32;
+        default_style.text_styles.insert(egui::TextStyle::Heading, egui::FontId::new(16.0, egui::FontFamily::Proportional));
+        default_style.text_styles.insert(egui::TextStyle::Button, egui::FontId::new(12.0, egui::FontFamily::Proportional));
+        default_style.text_styles.insert(egui::TextStyle::Body, egui::FontId::new(12.0, egui::FontFamily::Proportional));
+        default_style.text_styles.insert(egui::TextStyle::Name("battle_information".into()), egui::FontId::new(font_size_base, egui::FontFamily::Proportional));
+        ctx.set_style(default_style);
 
         GUI_CONFIG().get_mut().font_size = Some(font_size);
         GUI_CONFIG().get_mut().font_family = Some(font_datas.0);
@@ -173,8 +174,14 @@ impl GUI {
             .min_row_height(0.0)
     }
 
+    // battle_information の RichText を返す
+    pub fn bi_label(text: &str) -> egui::RichText {
+        egui::RichText::new(text)
+            .text_style(egui::style::TextStyle::Name("battle_information".into()))
+    }
+
     // デフォルトフォントの設定
-    fn set_default_font(&mut self, ctx: &egui::CtxRef) {
+    fn set_default_font(&mut self, ctx: &egui::Context) {
         Self::set_font(ctx, GUI_CONFIG().get_mut().font_family.clone(), GUI_CONFIG().get_mut().font_size.unwrap_or(12));
 
         self.window_configuration.font_size = GUI_CONFIG().get_mut().font_size.clone().unwrap();
@@ -279,8 +286,8 @@ impl GUI {
 impl epi::App for GUI {
     fn name(&self) -> &str { "smabrog" }
 
-    fn setup(&mut self, ctx: &egui::CtxRef, frame: &epi::Frame, _storage: Option<&dyn epi::Storage>) {
-        SMASHBROS_RESOURCE().init(Some(frame));
+    fn setup(&mut self, ctx: &egui::Context, _frame: &epi::Frame, _storage: Option<&dyn epi::Storage>) {
+        SMASHBROS_RESOURCE().init(Some(ctx));
         GUI_CONFIG().get_mut().load_config(true).expect("Failed to load config");
         if let Some(lang) = GUI_CONFIG().get_mut().lang.as_ref() {
             LANG_LOADER().change(lang.clone());
@@ -354,7 +361,7 @@ impl epi::App for GUI {
         let _ = GUI_CONFIG().get_mut().save_config(true);
     }
 
-    fn update(&mut self, ctx: &egui::CtxRef, frame: &epi::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &epi::Frame) {
         self.update_battle_informations();
         self.update_capture_mode();
         self.update_language(false);
@@ -401,7 +408,7 @@ impl WindowBattleInformation {
 }
 impl GUIModelTrait for WindowBattleInformation {
     fn name(&self) -> String { fl!(LANG_LOADER().get(), "battle_information") }
-    fn show(&mut self, ctx: &egui::CtxRef) {
+    fn show(&mut self, ctx: &egui::Context) {
         egui::Window::new(self.name())
             .default_rect(Self::get_initial_window_rect())
             .show(ctx, |ui| self.ui(ui));
@@ -556,7 +563,7 @@ impl WindowBattleHistory {
         
                             ui.image(
                                 plot::PlotImage::new(
-                                    chara_texture,
+                                    chara_texture.id(),
                                     self.chara_plot_list[chara_name].clone(),
                                     egui::Vec2::new(Self::CHARA_IMAGE_ZOOM, Self::CHARA_IMAGE_ZOOM),
                                 ),
@@ -565,7 +572,6 @@ impl WindowBattleHistory {
                                     plot::Value::new(self.chara_plot_list[chara_name].x, self.chara_plot_list[chara_name].y - Self::CHARA_IMAGE_ZOOM as f64 * 0.6),
                                     &format!("{:3.1}", wins_rate * 100.0)
                                 ).color(egui::Color32::WHITE)
-                                .style(egui::TextStyle::Body)
                             );
                         };
                     });
@@ -637,12 +643,12 @@ impl WindowBattleHistory {
     }
 }
 impl GUIModelTrait for WindowBattleHistory {
-    fn setup(&mut self, _ctx: &egui::CtxRef) {
+    fn setup(&mut self, _ctx: &egui::Context) {
         self.find_character_list = vec![String::new(); 2];
         self.is_exact_match = true;
     }
     fn name(&self) -> String { fl!(LANG_LOADER().get(), "battle_history") }
-    fn show(&mut self, ctx: &egui::CtxRef) {
+    fn show(&mut self, ctx: &egui::Context) {
         egui::Window::new(self.name())
             .default_rect(Self::get_initial_window_rect())
             .vscroll(true)
@@ -1126,13 +1132,13 @@ impl WindowConfiguration {
 }
 impl GUIModelTrait for WindowConfiguration {
     fn name(&self) -> String { fl!(LANG_LOADER().get(), "config") }
-    fn show(&mut self, ctx: &egui::CtxRef) {
+    fn show(&mut self, ctx: &egui::Context) {
         egui::Window::new( self.name() )
             .default_rect(Self::get_initial_window_rect())
             .vscroll(true)
             .show(ctx, |ui| self.ui(ui));
     }
-    fn setup(&mut self, ctx: &egui::CtxRef) {
+    fn setup(&mut self, ctx: &egui::Context) {
         if let Some(visuals) = GUI_CONFIG().get_mut().visuals.as_ref() {
             ctx.set_visuals(visuals.clone());
         }
@@ -1229,13 +1235,12 @@ impl WindowBattleInformationGroup {
     // キャラと順位の表示
     fn show_player_chara(ui: &mut egui::Ui, data: &mut SmashbrosData, player_id: i32) {
         let button = if let Some(order_texture) = SMASHBROS_RESOURCE().get_mut().get_order_handle(data.get_order(player_id)) {
-            let size = SMASHBROS_RESOURCE().get_mut().get_image_size(order_texture).unwrap();
-            egui::Button::image_and_text(order_texture, size * egui::Vec2::new(0.25, 0.25), "")
+            egui::Button::image_and_text(order_texture.id(), order_texture.size_vec2() * egui::Vec2::new(0.25, 0.25), "")
         } else {
             egui::Button::new("?")
         };
 
-        if let Some(chara_image) = GUI::get_chara_image(data.as_ref().get_character(player_id), [32.0, 32.0]) {
+        if let Some(chara_image) = GUI::get_chara_image( data.as_ref().get_character(player_id), egui::Vec2::new(32.0, 32.0) ) {
             ui.add_sized( [32.0, 32.0], chara_image);
         } else {
             ui.add_sized( [32.0, 32.0], egui::Label::new(format!("{}p", player_id + 1)) );
@@ -1279,7 +1284,7 @@ impl WindowBattleInformationGroup {
         let stock = data.get_stock(player_id);
         for i in 0..3 {
             if (0 != stock) && (i < stock || 0 == i) {
-                if let Some(chara_image) = GUI::get_chara_image(data.get_character(player_id), [16.0, 16.0]) {
+                if let Some(chara_image) = GUI::get_chara_image( data.get_character(player_id), egui::Vec2::new(16.0, 16.0) ) {
                     ui.add_sized( [16.0, 16.0], chara_image);
                 } else {
                     ui.add_sized( [16.0, 16.0], egui::Label::new("?"));
@@ -1623,16 +1628,16 @@ impl WindowWinsGraph {
             // キャラ画像
             if GUI_CONFIG().get_mut().gui_state_config.chara_image {
                 ui.scope(|ui| {
-                    if let Some(image) = GUI::get_chara_image(now_data.as_ref().get_character(0), [16.0, 16.0]) {
+                    if let Some(image) = GUI::get_chara_image( now_data.as_ref().get_character(0), egui::Vec2::new(16.0, 16.0) ) {
                         ui.add(image);
                     } else {
-                        ui.small("1p");
+                        ui.label(GUI::bi_label("1p"));
                     }
-                    ui.small("x");
-                    if let Some(image) = GUI::get_chara_image(now_data.as_ref().get_character(1), [16.0, 16.0]) {
+                    ui.label(GUI::bi_label("x"));
+                    if let Some(image) = GUI::get_chara_image( now_data.as_ref().get_character(1), egui::Vec2::new(16.0, 16.0) ) {
                         ui.add(image);
                     } else {
-                        ui.small("2p");
+                        ui.label(GUI::bi_label("2p"));
                     }
                 });
             }
@@ -1641,11 +1646,11 @@ impl WindowWinsGraph {
                 ui.scope(|ui| {
                     match self.kind {
                         WinsGraphKind::Gsp => {
-                            ui.small(format!("{:3.1}%({})", 100.0 * self.win_rate.0, self.win_rate.1));
+                            ui.label(GUI::bi_label( &format!("{:3.1}%({})", 100.0 * self.win_rate.0, self.win_rate.1) ));
                         },
                         WinsGraphKind::Rate => {
                             ui.add(egui::Separator::default().vertical());
-                            ui.small(format!("{:3.1}%", 100.0 * self.win_rate.0));
+                            ui.label(GUI::bi_label( &format!("{:3.1}%", 100.0 * self.win_rate.0) ));
                         },
                     }
                 });
@@ -1659,8 +1664,8 @@ impl WindowWinsGraph {
             // 連勝表示
             if GUI_CONFIG().get_mut().gui_state_config.wins {
                 ui.scope(|ui| {
-                    ui.small(format!( "{}", self.wins ));
-                    ui.small(format!( "{}", fl!(LANG_LOADER().get(), "wins") ));
+                    ui.label( GUI::bi_label(&format!( "{}", self.wins)) );
+                    ui.label( GUI::bi_label(&format!( "{}", fl!(LANG_LOADER().get(), "wins"))) );
                 });
             }
             if GUI_CONFIG().get_mut().gui_state_config.win_lose {
@@ -1668,12 +1673,12 @@ impl WindowWinsGraph {
                     match self.kind {
                         WinsGraphKind::Gsp => {
                             // 勝敗数表示
-                            ui.small(format!( "o:{}/x:{}", self.wins_lose.0, self.wins_lose.1 ));
+                            ui.label( GUI::bi_label(&format!( "o:{}/x:{}", self.wins_lose.0, self.wins_lose.1)) );
                         },
                         WinsGraphKind::Rate => {
                             // 試合数表示
                             ui.add(egui::Separator::default().vertical());
-                            ui.small(format!("({})", self.win_rate.1));
+                            ui.label( GUI::bi_label(&format!("({})", self.win_rate.1)) );
                         },
                     }
                 });
@@ -1700,14 +1705,14 @@ impl WindowWinsGraph {
                         let gsp = self.last_power as f32 / 10_000.0;
                         ui.scope(|ui| {
                             let gsp_string = if -1 == self.last_power { fl!(LANG_LOADER().get(), "empty") } else { format!( "{:.0}", gsp ) };
-                            ui.small(gsp_string);
-                            ui.small(format!( "{}", fl!(LANG_LOADER().get(), "million") ));
+                            ui.label( GUI::bi_label(&gsp_string) );
+                            ui.label( GUI::bi_label(&format!( "{}", fl!(LANG_LOADER().get(), "million") )) );
                         });
                     } else {
                         ui.scope(|ui| {
                             let gsp_string = if -1 == self.last_power { fl!(LANG_LOADER().get(), "empty") } else { format!( "{}", self.last_power ) };
-                            ui.small(format!( "{}", gsp_string ));
-                            ui.small(format!( "{}", fl!(LANG_LOADER().get(), "gsp") ));
+                            ui.label( GUI::bi_label(&format!( "{}", gsp_string )) );
+                            ui.label( GUI::bi_label(&format!( "{}", fl!(LANG_LOADER().get(), "gsp") )) );
                         });
                     }
                 } else if GUI_CONFIG().get_mut().gui_state_config.graph {

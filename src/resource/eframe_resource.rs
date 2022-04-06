@@ -1,5 +1,5 @@
 
-use eframe::egui::TextureId;
+use egui::TextureHandle;
 use opencv::prelude::MatTraitConst;
 use serde::{
     Deserialize,
@@ -14,9 +14,8 @@ use super::*;
 pub struct SmashbrosResource {
     pub version: String,
     pub character_list: HashMap<String, String>,
-    pub icon_list: HashMap<String, TextureId>,
-    pub order_image_list: HashMap<i32, TextureId>,
-    pub image_size_list: HashMap<TextureId, eframe::egui::Vec2>,
+    pub icon_list: HashMap<String, TextureHandle>,
+    pub order_image_list: HashMap<i32, TextureHandle>,
     pub i18n_convert_list: HashMap<String, String>,
     pub bgm_list: HashMap<String, bool>,
 }
@@ -37,33 +36,30 @@ impl SmashbrosResource {
         return (name.to_string(), max_ratio);
     }
 
-    fn get_texture_id(path: &str, frame: &eframe::epi::Frame) -> (TextureId, eframe::egui::Vec2) {
+    fn get_texture_handle(path: &str, ctx: &egui::Context) -> TextureHandle {
         let image = opencv::imgcodecs::imread(path, opencv::imgcodecs::IMREAD_UNCHANGED).unwrap();
         let mut converted_image = opencv::core::Mat::default();
-        opencv::imgproc::cvt_color(&image, &mut converted_image, opencv::imgproc::COLOR_BGRA2RGBA, 0).expect("failed cvt_color BGR to RGB. from get_texture_id");
+        opencv::imgproc::cvt_color(&image, &mut converted_image, opencv::imgproc::COLOR_BGRA2RGBA, 0).expect("failed cvt_color BGR to RGB. from get_texture_handle");
 
-        Self::alloc_texture_id(frame, &converted_image)
+        Self::load_texture_handle(path, ctx, &converted_image)
     }
 
-    pub fn new(frame: &eframe::epi::Frame) -> Self {
+    pub fn new(ctx: &egui::Context) -> Self {
         let text = SmashbrosResourceText::new();
-        let mut image_size_list = HashMap::new();
-        let mut icon_list: HashMap<String, TextureId> = HashMap::new();
+        let mut icon_list: HashMap<String, TextureHandle> = HashMap::new();
         for (character_name, file_name) in text.icon_list.iter() {
-            let (texture_id, size) = SmashbrosResource::get_texture_id(&format!("icon/{}", file_name), frame);
-            icon_list.insert(character_name.to_string(), texture_id);
-            image_size_list.insert(texture_id, size);
+            let texture_handle = SmashbrosResource::get_texture_handle(&format!("icon/{}", file_name), ctx);
+            icon_list.insert(character_name.to_string(), texture_handle);
         }
 
-        let mut order_image_list: HashMap<i32, TextureId> = HashMap::new();
+        let mut order_image_list: HashMap<i32, TextureHandle> = HashMap::new();
         for order in 1..=4 {
-            let (texture_id, size) = SmashbrosResource::get_texture_id(
+            let texture_handle = SmashbrosResource::get_texture_handle(
                 &format!("resource/result_player_order_{}_color.png", order),
-                frame
+                ctx
             );
 
-            order_image_list.insert(order, texture_id);
-            image_size_list.insert(texture_id, size);
+            order_image_list.insert(order, texture_handle);
         }
 
         Self {
@@ -71,7 +67,6 @@ impl SmashbrosResource {
             character_list: text.character_list,
             icon_list,
             order_image_list,
-            image_size_list,
             i18n_convert_list: text.i18n_convert_list,
             bgm_list: text.bgm_list,
         }
@@ -86,7 +81,6 @@ impl SmashbrosResource {
             character_list: text.character_list,
             icon_list: HashMap::new(),
             order_image_list: HashMap::new(),
-            image_size_list: HashMap::new(),
             i18n_convert_list: text.i18n_convert_list,
             bgm_list: text.bgm_list,
         }
@@ -141,20 +135,20 @@ impl SmashbrosResource {
         None
     }
 
-    pub fn alloc_texture_id(frame: &eframe::epi::Frame, image: &opencv::core::Mat) -> (TextureId, eframe::egui::Vec2) {
+    pub fn load_texture_handle(name: &str, ctx: &egui::Context, image: &opencv::core::Mat) -> TextureHandle {
         let image_size = ( image.cols() * image.rows() * 4 ) as usize;
         let image_data_by_slice: &[u8] = unsafe{ std::slice::from_raw_parts(image.datastart(), image_size) };
         
-        (
-            frame.alloc_texture(eframe::epi::Image::from_rgba_unmultiplied(
+        ctx.load_texture(
+            name,
+            egui::ColorImage::from_rgba_unmultiplied(
                 [image.cols() as usize, image.rows() as usize],
                 image_data_by_slice,
-            )),
-            eframe::egui::Vec2::new(image.cols() as f32, image.rows() as f32)
+            )
         )
     }
 
-    pub fn get_image_handle(&self, character_name: String) -> Option<TextureId> {
+    pub fn get_image_handle(&self, character_name: String) -> Option<TextureHandle> {
         if !self.icon_list.contains_key(&character_name) {
             return None;
         }
@@ -162,16 +156,12 @@ impl SmashbrosResource {
         Some(self.icon_list[&character_name].clone())
     }
 
-    pub fn get_order_handle(&self, order: i32) -> Option<TextureId> {
+    pub fn get_order_handle(&self, order: i32) -> Option<TextureHandle> {
         if order <= 0 || 5 <= order {
             return None;
         }
 
         Some(self.order_image_list[&order].clone())
-    }
-
-    pub fn get_image_size(&self, texture_id: TextureId) -> Option<eframe::egui::Vec2> {
-        self.image_size_list.get(&texture_id).cloned()
     }
 
     // 言語の変更でのリソースの再読み込み
@@ -188,9 +178,9 @@ pub struct WrappedSmashbrosResource {
     smashbros_resource: Option<SmashbrosResource>
 }
 impl WrappedSmashbrosResource {
-    pub fn init(&mut self, frame: Option<&eframe::epi::Frame>) {
+    pub fn init(&mut self, ctx: Option<&egui::Context>) {
         if self.smashbros_resource.is_none() {
-            self.smashbros_resource = Some(SmashbrosResource::new( frame.unwrap() ));
+            self.smashbros_resource = Some(SmashbrosResource::new(ctx.unwrap()));
         }
     }
 
@@ -209,28 +199,6 @@ static mut _SMASHBROS_RESOURCE: WrappedSmashbrosResource = WrappedSmashbrosResou
 #[allow(non_snake_case)]
 pub fn SMASHBROS_RESOURCE() -> &'static mut WrappedSmashbrosResource {
     unsafe { &mut _SMASHBROS_RESOURCE }
-}
-
-// LanguageIdentifier の変換用
-fn deserialized_lang<'de, D>(deserializer: D) -> Result<Option<LanguageIdentifier>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let lang_str = String::deserialize(deserializer)?;
-    if lang_str.is_empty() {
-        return Ok(Some( LanguageIdentifier::from_bytes("ja-JP".as_bytes()).expect("lang parsing failed") ));
-    }
-    Ok(Some( LanguageIdentifier::from_bytes(lang_str.as_bytes()).unwrap() ))
-}
-fn serialize_lang<S>(lang: &Option<LanguageIdentifier>, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    if let Some(lang) = lang {
-        serializer.serialize_str(lang.to_string().as_str())
-    } else {
-        serializer.serialize_str("ja-JP")
-    }
 }
 
 // GUI の状態を保持するためのデータ
@@ -305,8 +273,8 @@ pub struct GUIConfig {
 
     // バージョン更新でファイルに値が無い場合があるので、以下から default を追加する
     #[serde(default)]
-    pub visuals: Option<eframe::egui::style::Visuals>,
-    #[serde(deserialize_with = "deserialized_lang", serialize_with = "serialize_lang")]
+    pub visuals: Option<egui::style::Visuals>,
+    #[serde(deserialize_with = "GUIConfig::deserialized_lang", serialize_with = "GUIConfig::serialize_lang")]
     pub lang: Option<LanguageIdentifier>,
     #[serde(default = "crate::engine::SmashBrogEngine::get_default_result_limit")]
     pub result_max: i64,
@@ -332,7 +300,16 @@ impl GUIConfig {
     /// 設定情報の読み込み
     pub fn load_config(&mut self, is_initalize: bool) -> anyhow::Result<()> {
         let file = std::fs::File::open(Self::CONFIG_FILE)?;
-        *self = serde_json::from_reader(std::io::BufReader::new(file))?;
+        match serde_json::from_reader(std::io::BufReader::new(file)) {
+            Ok(own) => *self = own,
+            Err(e) => {
+                log::warn!("skip load config for version up [<=31] -> [32<=]: {}", e);
+
+                self.result_max = crate::engine::SmashBrogEngine::get_default_result_limit();
+                self.bgm_playlist_folder = GUIConfig::default_bgm_playlist_folder();
+                self.stock_alert_command = GUIConfig::default_stock_alert_command();
+            }
+        }
 
         if is_initalize && cfg!(target_os = "windows") {
             unsafe {
@@ -379,6 +356,28 @@ impl GUIConfig {
         Ok(())
     }
 
+    // LanguageIdentifier の変換用
+    pub fn deserialized_lang<'de, D>(deserializer: D) -> Result<Option<LanguageIdentifier>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let lang_str = String::deserialize(deserializer)?;
+        if lang_str.is_empty() {
+            return Ok(Some( LanguageIdentifier::from_bytes("ja-JP".as_bytes()).expect("lang parsing failed") ));
+        }
+        Ok(Some( LanguageIdentifier::from_bytes(lang_str.as_bytes()).unwrap() ))
+    }
+    pub fn serialize_lang<S>(lang: &Option<LanguageIdentifier>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        if let Some(lang) = lang {
+            serializer.serialize_str(lang.to_string().as_str())
+        } else {
+            serializer.serialize_str("ja-JP")
+        }
+    }
+    
     pub fn default_bgm_playlist_folder() -> String { "./playlist".to_string() }
     pub fn default_stock_alert_command() -> String { "./resource/danger.avi".to_string() }
 }
