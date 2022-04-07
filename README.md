@@ -7,9 +7,12 @@ smabrog
 
 smabrog の Rust 移植/改変版です。
 
+- スクリーンショット  
+    ![50戦の戦歴と外観](./thumbnails_0.png) ![対キャラ表とカスタマイズ](./thumbnails_1.png) ![対キャラ検索と詳細設定](./thumbnails_2.png)
+
 ## Usage
 - Download
-    - 最新の smabrog.zip は [ここ](https://github.com/bass-clef/smabrog_for_rust/releases/)
+    - 最新の smabrog_installer.exe は [ここ](https://github.com/bass-clef/smabrog_for_rust/releases/)
 
 - 忙しい人向け
     - DL して解凍 smabrog_installer.exe で自分のユーザーのみにインスコ、起動。
