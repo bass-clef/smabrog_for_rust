@@ -150,7 +150,7 @@ smabrog の Rust 移植/改変版です。
 - [Amazon ほしいも](https://www.amazon.jp/hz/wishlist/ls/1GT79HREJVH1C?ref_=wl_share)
 
 ## log
-- 2022/4/5  
+- 2022/4/7  
     ver 0.32.0 を公開しました  
     - Windows 11 と Windows Sanbbox での動作確認をしました  
     - ソース/ウィンドウ のキャプチャ方法を WinAPI から DirectX 11 に変更しました  

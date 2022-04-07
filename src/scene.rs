@@ -884,7 +884,7 @@ impl Default for GameStartScene {
                     imgcodecs::imread("resource/battle_time_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
                     Some(imgcodecs::imread("resource/battle_time_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
                 ).unwrap()
-                .set_border(0.95),
+                .set_border(0.90),
             is_scene: false,
         }
     }
@@ -906,7 +906,6 @@ impl SceneTrait for GameStartScene {
     // 右上の 00.00 が表示されている場所に ある程度の確率で検出してればよしとする
     // (背景がステージによって全然違うのでマスク処理するのが難しい)
     fn is_scene(&mut self, capture_image: &core::Mat, smashbros_data: Option<&mut SmashbrosData>) -> opencv::Result<bool> {
-        // let time_zero_area = core::Mat::roi( capture_image, core::Rect {x:566, y:11, width:62, height:27}).unwrap();
         async_std::task::block_on(async {
             self.scene_judgment.match_captured_scene(&capture_image).await
         })?;
@@ -984,7 +983,6 @@ impl GameStartScene {
 struct GamePlayingScene {
     stock_black_scene_judgment: SceneJudgment,
     stock_white_scene_judgment: SceneJudgment,
-    buffer: CaptureFrameStore,
     stock_number_mask: core::Mat,
 }
 impl Default for GamePlayingScene {
@@ -1006,7 +1004,6 @@ impl Default for GamePlayingScene {
                     x:0, y:100, width:640, height: 100
                 })
                 .set_border(0.95),
-            buffer: CaptureFrameStore::default(),
             stock_number_mask: imgcodecs::imread("resource/stock_number_mask.png", imgcodecs::IMREAD_GRAYSCALE).unwrap()
         }
     }
@@ -1045,11 +1042,9 @@ impl SceneTrait for GamePlayingScene {
     // このシーンは [GameEnd] が検出されるまで待つ(つまり現状維持)
     fn to_scene(&self, _now_scene: SceneList) -> SceneList { SceneList::GamePlaying }
 
-    fn recoding_scene(&mut self, capture_image: &core::Mat) -> opencv::Result<()> { self.buffer.recoding_frame(capture_image) }
-    fn is_recoded(&self) -> bool { self.buffer.is_filled() }
-    fn detect_data(&mut self, _smashbros_data: &mut SmashbrosData) -> opencv::Result<()> {
-        Ok(())
-    }
+    fn recoding_scene(&mut self, capture_image: &core::Mat) -> opencv::Result<()> { Ok(()) }
+    fn is_recoded(&self) -> bool { false }
+    fn detect_data(&mut self, _smashbros_data: &mut SmashbrosData) -> opencv::Result<()> { Ok(()) }
 }
 impl GamePlayingScene {
     // 1 on 1
