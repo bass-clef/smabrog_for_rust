@@ -9,6 +9,7 @@ pub struct CaptureFrameStore {
     prev_image: core::Mat,
     filled_by_frame: bool,
     pub recoded_frame: i32,
+    pub file_name: String,
 
     recoding_start_time: Option<Instant>,
     recoding_end_time: Option<Instant>,
@@ -23,6 +24,7 @@ impl Default for CaptureFrameStore {
             prev_image: core::Mat::default(),
             filled_by_frame: false,
             recoded_frame: 0,
+            file_name: "temp".to_string(),
 
             recoding_start_time: None,
             recoding_end_time: None,
@@ -31,6 +33,12 @@ impl Default for CaptureFrameStore {
     }
 }
 impl CaptureFrameStore {
+    pub fn set_file_name(mut self, file_name: String) -> Self {
+        self.file_name = file_name;
+
+        self
+    }
+
     // 録画開始時にする処理
     fn recoding_initialize(&mut self) -> opencv::Result<()> {
         self.recoding_start_time = None;
@@ -44,7 +52,8 @@ impl CaptureFrameStore {
             self.reader.release()?;
         }
 
-        if !codecs().get().open_writer_with_codec(&mut self.writer).unwrap_or(false) {
+        codecs().get_mut().file_name = Some(self.file_name.clone());
+        if !codecs().get_mut().open_writer_with_codec(&mut self.writer).unwrap_or(false) {
             return Err(opencv::Error::new( 0, "not found Codec for [*.mp4 or *.avi]. maybe: you install any Codec for your PC".to_string() ));
         }
 
@@ -62,7 +71,8 @@ impl CaptureFrameStore {
             self.writer.release()?;
         }
 
-        if !codecs().get().open_reader_with_codec(&mut self.reader).unwrap_or(false) {
+        codecs().get_mut().file_name = Some(self.file_name.clone());
+        if !codecs().get_mut().open_reader_with_codec(&mut self.reader).unwrap_or(false) {
             return Err(opencv::Error::new( 0, "not initialized video reader. maybe: playing temp video?".to_string() ));
         }
 

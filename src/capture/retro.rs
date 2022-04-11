@@ -1,3 +1,8 @@
+use winapi::shared::minwindef::LPVOID;
+use winapi::shared::windef::*;
+use winapi::um::wingdi::*;
+use winapi::um::winnt::HANDLE;
+use winapi::um::winuser::*;
 use super::*;
 
 /// Mat,DCを保持するクラス。毎回 Mat を作成するのはやはりメモリコストが高すぎた。
@@ -43,7 +48,7 @@ impl CaptureDC {
     }
 
     /// 状況に応じて handle から Mat を返す
-    pub fn get_mat(&mut self, handle: winapi::shared::windef::HWND, content_area: Option<core::Rect>, offset_pos: Option<core::Point>) -> opencv::Result<core::Mat> {
+    pub fn get_mat(&mut self, handle: HWND, content_area: Option<core::Rect>, offset_pos: Option<core::Point>) -> opencv::Result<core::Mat> {
         if self.compatibility_dc_handle.is_null() {
             self.get_mat_from_hwnd(handle, content_area, offset_pos)
         } else {
@@ -52,7 +57,7 @@ impl CaptureDC {
     }
 
     /// 既に作成してある互換 DC に HWND -> HDC から取得して,メモリコピーして Mat を返す
-    pub fn get_mat_from_dc(&mut self, handle: winapi::shared::windef::HWND, content_area: Option<core::Rect>, offset_pos: Option<core::Point>) -> opencv::Result<core::Mat> {
+    pub fn get_mat_from_dc(&mut self, handle: HWND, content_area: Option<core::Rect>, offset_pos: Option<core::Point>) -> opencv::Result<core::Mat> {
         if self.width != self.prev_image.cols() || self.height != self.prev_image.rows() {
             // サイズ変更があると作成し直す
             return self.get_mat_from_hwnd(handle, content_area, offset_pos);
@@ -105,7 +110,7 @@ impl CaptureDC {
     }
 
     /// HWND から HDC を取得して Mat に変換する
-    pub fn get_mat_from_hwnd(&mut self, handle: winapi::shared::windef::HWND, content_area: Option<core::Rect>, offset_pos: Option<core::Point>)
+    pub fn get_mat_from_hwnd(&mut self, handle: HWND, content_area: Option<core::Rect>, offset_pos: Option<core::Point>)
         -> opencv::Result<core::Mat>
     {
         self.release();

@@ -7,6 +7,7 @@ pub struct HamVsSpamScene {
     rule_stock_scene_judgment: SceneJudgment,
     rule_time_scene_judgment: SceneJudgment,
     rule_stamina_scene_judgment: SceneJudgment,
+    rule_guesser: ValueGuesser<BattleRule>,
     buffer: CaptureFrameStore,
 }
 impl Default for HamVsSpamScene {
@@ -17,18 +18,20 @@ impl Default for HamVsSpamScene {
                     imgcodecs::imread("resource/rule_stock_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
                     Some(imgcodecs::imread("resource/rule_stock_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
                 ).unwrap()
-                .set_border(0.985),
+                .set_border(0.95),
             rule_time_scene_judgment: SceneJudgment::new(
                     imgcodecs::imread("resource/rule_time_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
                     Some(imgcodecs::imread("resource/rule_time_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
                 ).unwrap()
-                .set_border(0.985),
+                .set_border(0.95),
             rule_stamina_scene_judgment: SceneJudgment::new(
                     imgcodecs::imread("resource/rule_hp_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
                     Some(imgcodecs::imread("resource/rule_hp_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
                 ).unwrap()
-                .set_border(0.985),
-            buffer: CaptureFrameStore::default(),
+                .set_border(0.95),
+            rule_guesser: ValueGuesser::new(BattleRule::Unknown),
+            buffer: CaptureFrameStore::default()
+                .set_file_name("ham_vs_spam.avi".to_string()),
         }
     }
 }
@@ -58,7 +61,7 @@ impl SceneTrait for HamVsSpamScene {
 
         if self.vs_scene_judgment.is_near_match() {
             imgcodecs::imwrite("ham_vs_spam.png", capture_image, &core::Vector::from(vec![]))?;
-            self.buffer.start_recoding_by_time(std::time::Duration::from_millis(2500));
+            self.buffer.start_recoding_by_time(std::time::Duration::from_millis(3000));
             self.buffer.recoding_frame(capture_image)?;
         }
         Ok(self.vs_scene_judgment.is_near_match())
@@ -75,12 +78,13 @@ impl SceneTrait for HamVsSpamScene {
             rule_stock_scene_judgment,
             rule_time_scene_judgment,
             rule_stamina_scene_judgment,
+            rule_guesser,
             buffer,
             ..
         } = self;
 
         buffer.replay_frame(|frame| {
-            Self::captured_rules(&frame, smashbros_data, rule_stock_scene_judgment, rule_time_scene_judgment, rule_stamina_scene_judgment)?;
+            Self::captured_rules(&frame, smashbros_data, rule_guesser, rule_stock_scene_judgment, rule_time_scene_judgment, rule_stamina_scene_judgment)?;
             Self::captured_character_name(&frame, smashbros_data)?;
 
             Ok(false)
@@ -139,7 +143,7 @@ impl HamVsSpamScene {
         Ok(smashbros_data.get_player_count() == skip_count)
     }
 
-    pub fn captured_rules(capture_image: &core::Mat, smashbros_data: &mut SmashbrosData, rule_stock_scene_judgment: &mut SceneJudgment, rule_time_scene_judgment: &mut SceneJudgment, rule_stamina_scene_judgment: &mut SceneJudgment) -> opencv::Result<bool> {
+    pub fn captured_rules(capture_image: &core::Mat, smashbros_data: &mut SmashbrosData, rule_guesser: &mut ValueGuesser<BattleRule>, rule_stock_scene_judgment: &mut SceneJudgment, rule_time_scene_judgment: &mut SceneJudgment, rule_stamina_scene_judgment: &mut SceneJudgment) -> opencv::Result<bool> {
         if smashbros_data.get_rule() == BattleRule::Tournament {
             return Ok(false);
         }
@@ -149,23 +153,25 @@ impl HamVsSpamScene {
                 // ストック制と検出(1on1: これがデフォルトで一番多いルール)
                 rule_stock_scene_judgment.match_captured_scene(capture_image).await?;
                 if rule_stock_scene_judgment.is_near_match() {
-                    smashbros_data.set_rule(BattleRule::Stock);
-                    log::info!("rule: stock: {:2.3}%", rule_stock_scene_judgment.prev_match_ratio);
+                    rule_guesser.guess(&BattleRule::Stock);
                     return Ok(());
                 }
 
                 rule_time_scene_judgment.match_captured_scene(capture_image).await?;
                 if rule_time_scene_judgment.is_near_match() {
-                    smashbros_data.set_rule(BattleRule::Time);
-                    log::info!("rule: time {:2.3}%", rule_time_scene_judgment.prev_match_ratio);
+                    rule_guesser.guess(&BattleRule::Time);
                     return Ok(());
                 }
 
                 rule_stamina_scene_judgment.match_captured_scene(capture_image).await
             })?;
             if rule_stamina_scene_judgment.is_near_match() {
-                smashbros_data.set_rule(BattleRule::Stamina);
-                log::info!("rule: stamina {:2.3}%", rule_stamina_scene_judgment.prev_match_ratio);
+                rule_guesser.guess(&BattleRule::Stamina);
+            }
+
+            if rule_guesser.is_decided() {
+                smashbros_data.set_rule(rule_guesser.get());
+                log::info!("rule: {:?}: {:2.3}%", smashbros_data.get_rule(), rule_stock_scene_judgment.prev_match_ratio);
             }
         }
 

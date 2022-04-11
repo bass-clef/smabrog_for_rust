@@ -4,7 +4,7 @@ use super::*;
 pub struct Codec {
     pub backend: i32,
     fourcc: i32,
-    file_name: Option<String>,
+    pub file_name: Option<String>,
 }
 impl AsRef<Codec> for Codec {
     fn as_ref(&self) -> &Codec { self }
@@ -83,11 +83,11 @@ pub struct WrappedCodec {
 }
 impl WrappedCodec {
     // 参照して返さないと、unwrap() で move 違反がおきてちぬ！
-    pub fn get(&mut self) -> &Codec {
+    pub fn get_mut(&mut self) -> &mut Codec {
         if self.codecs.is_none() {
             self.codecs = Some(Codec::find_codec(None));
         }
-        self.codecs.as_ref().unwrap()
+        self.codecs.as_mut().unwrap()
     }
 }
 static mut CODECS: WrappedCodec = WrappedCodec {

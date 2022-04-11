@@ -34,7 +34,8 @@ impl Default for ResultScene {
                 imgcodecs::imread("resource/battle_retry_color.png", imgcodecs::IMREAD_UNCHANGED).unwrap(),
                 Some(imgcodecs::imread("resource/battle_retry_mask.png", imgcodecs::IMREAD_UNCHANGED).unwrap())
             ).unwrap(),
-            buffer: CaptureFrameStore::default(),
+            buffer: CaptureFrameStore::default()
+                .set_file_name("result.avi".to_string()),
             result_power_mask: imgcodecs::imread("resource/result_power_mask.png", imgcodecs::IMREAD_GRAYSCALE).unwrap(),
         }
     }

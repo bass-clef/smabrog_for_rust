@@ -268,10 +268,10 @@ impl GUIStateConfig {
 pub struct GUIConfig {
     pub window_x: i32,
     pub window_y: i32,
-    pub capture_win_caption: String,
-    pub capture_device_name: String,
 
     // バージョン更新でファイルに値が無い場合があるので、以下から default を追加する
+    #[serde(default)]
+    pub capture_mode: crate::capture::CaptureMode,
     #[serde(default)]
     pub visuals: Option<egui::style::Visuals>,
     #[serde(deserialize_with = "GUIConfig::deserialized_lang", serialize_with = "GUIConfig::serialize_lang")]

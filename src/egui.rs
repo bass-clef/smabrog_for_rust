@@ -80,7 +80,6 @@ trait  GUIViewTrait {
 
 
 pub struct GUI {
-    capture_mode: CaptureMode,
     window_battle_information: WindowBattleInformation,
     window_battle_history: WindowBattleHistory,
     window_configuration: WindowConfiguration,
@@ -88,7 +87,6 @@ pub struct GUI {
 impl GUI {
     fn new() -> Self {
         Self {
-            capture_mode: CaptureMode::default(),
             window_battle_information: WindowBattleInformation::default(),
             window_battle_history: WindowBattleHistory::default(),
             window_configuration: WindowConfiguration::default(),
@@ -165,6 +163,75 @@ impl GUI {
         GUI_CONFIG().get_mut().font_family = Some(font_datas.0);
     }
 
+    // イベントの設定
+    pub fn set_event() {
+        SMASHBROS_ENGINE().get_mut().registory_scene_event(
+            SceneList::Unknown,
+            SceneList::DecidedRules,
+            Box::new(|smashbros_data| {
+                // 試合中、最大ストックが警告未満になったら警告音を再生
+                if smashbros_data.is_decided_max_stock(0) {
+                    if smashbros_data.get_max_stock(0) < GUI_CONFIG().get_mut().gui_state_config.stock_warning_under {
+                        if !GUI_CONFIG().get_mut().stock_alert_command.is_empty() {
+                            let command_result = std::process::Command::new("cmd")
+                                .args(["/K", "start", &GUI_CONFIG().get_mut().stock_alert_command])
+                                .output();
+                            
+                            match command_result {
+                                Ok(result) => {
+                                    if result.status.success() {
+                                        log::info!("stock alert command: {}", String::from_utf8_lossy(&result.stdout));
+                                    } else {
+                                        log::warn!("Failed to execute command: {}", String::from_utf8_lossy(&result.stderr));
+                                    }
+                                },
+                                Err(e) => log::error!("{}", e),
+                            }
+                        }
+                    }
+                }
+            })
+        );
+
+        SMASHBROS_ENGINE().get_mut().registory_scene_event(
+            SceneList::Unknown,
+            SceneList::DecidedBgm,
+            Box::new(|smashbros_data| {
+                // BGM が確定していて, BGM が許可されていないなら、変わりの BGM を再生する
+                if !SMASHBROS_RESOURCE().get_mut().bgm_list.is_empty() {
+                    if smashbros_data.is_decided_bgm_name() {
+                        if let Some(is_playble) = SMASHBROS_RESOURCE().get_mut().bgm_list.get(&smashbros_data.get_bgm_name()) {
+                            if !*is_playble {
+                                SOUND_MANAGER().get_mut().play_bgm_random();
+                            }
+                        }
+                    }
+                }
+            })
+        );
+
+        let bgm_callback = Box::new(|_smashbros_data: &mut SmashbrosData| {
+            // もし BGM が再生中なら止める
+            if SOUND_MANAGER().get_mut().is_playing(Some(SoundType::Bgm)) {
+                SOUND_MANAGER().get_mut().stop(Some(SoundType::Bgm));
+            }
+        });
+        SMASHBROS_ENGINE().get_mut().registory_scene_event(SceneList::GamePlaying, SceneList::GameEnd, bgm_callback.clone());
+        SMASHBROS_ENGINE().get_mut().registory_scene_event(SceneList::GamePlaying, SceneList::ReadyToFight, bgm_callback.clone());
+    }
+
+    // キャプチャ方法の変更
+    pub fn change_capture_mode() {
+        let _ = SMASHBROS_ENGINE().get_mut().change_capture_mode(&GUI_CONFIG().get_mut().capture_mode).map_err(|e|{
+            match GUI_CONFIG().get_mut().capture_mode {
+                CaptureMode::Empty(_) => (
+                    // デフォルト値に選択したことは知らせなくていいため、何もしない
+                ),
+                _ => log::warn!("{}", e),
+            }
+        });
+    }
+
     // 幅が 0 の egui::Grid を返す
     pub fn new_grid<T>(id_source: T, columns: usize, spacing: egui::Vec2) -> egui::Grid where T: std::hash::Hash {
         egui::Grid::new(id_source)
@@ -235,38 +302,6 @@ impl GUI {
         self.window_configuration.update_bgm();
     }
 
-    // 検出モードの更新
-    fn update_capture_mode(&mut self) {
-        if self.window_configuration.get_captured_mode() == &self.capture_mode {
-            return;
-        }
-
-        self.capture_mode = self.window_configuration.get_captured_mode().clone();
-        if self.capture_mode.is_default() {
-            // 未選択状態での設定はコンフィグから取得しておく
-            match self.capture_mode.as_mut() {
-                CaptureMode::Window(_, caption_name) => {
-                    *caption_name = GUI_CONFIG().get_mut().capture_win_caption.clone();
-                },
-                CaptureMode::VideoDevice(_, device_id, _) => {
-                    *device_id = self.window_configuration.get_device_id(
-                        GUI_CONFIG().get_mut().capture_device_name.clone()
-                    ).unwrap_or(-1);
-                },
-                _ => (),
-            }
-        }
-
-        self.window_configuration.set_capture_mode(self.capture_mode.clone());
-
-        match SMASHBROS_ENGINE().get_mut().change_capture_mode(&self.capture_mode) {
-            Ok(_) => {
-                let _ = GUI_CONFIG().get_mut().save_config(false);
-            },
-            Err(e) => log::warn!("{}", e),
-        }
-    }
-
     // 言語の更新
     fn update_language(&mut self, is_initialize: bool) {
         use i18n_embed::LanguageLoader;
@@ -289,72 +324,22 @@ impl epi::App for GUI {
     fn setup(&mut self, ctx: &egui::Context, _frame: &epi::Frame, _storage: Option<&dyn epi::Storage>) {
         SMASHBROS_RESOURCE().init(Some(ctx));
         GUI_CONFIG().get_mut().load_config(true).expect("Failed to load config");
+
         if let Some(lang) = GUI_CONFIG().get_mut().lang.as_ref() {
             LANG_LOADER().change(lang.clone());
         }
         self.update_language(true);
         self.set_default_font(ctx);
+
+        Self::set_event();
+        Self::change_capture_mode();
+
         self.window_battle_information.setup(ctx);
         self.window_battle_history.setup(ctx);
         self.window_configuration.setup(ctx);
 
         self.window_battle_information.battle_information = WindowBattleInformationGroup::default();
         self.update_battle_informations();
-
-        SMASHBROS_ENGINE().get_mut().registory_scene_event(
-            SceneList::Unknown,
-            SceneList::DecidedRules,
-            Box::new(|smashbros_data| {
-                // 試合中、最大ストックが警告未満になったら警告音を再生
-                if smashbros_data.is_decided_max_stock(0) {
-                    if smashbros_data.get_max_stock(0) < GUI_CONFIG().get_mut().gui_state_config.stock_warning_under {
-                        if !GUI_CONFIG().get_mut().stock_alert_command.is_empty() {
-                            let command_result = std::process::Command::new("cmd")
-                                .args(["/K", "start", &GUI_CONFIG().get_mut().stock_alert_command])
-                                .output();
-                            
-                            match command_result {
-                                Ok(result) => {
-                                    if result.status.success() {
-                                        log::info!("stock alert command: {}", String::from_utf8_lossy(&result.stdout));
-                                    } else {
-                                        log::warn!("Failed to execute command: {}", String::from_utf8_lossy(&result.stderr));
-                                    }
-                                },
-                                Err(e) => log::error!("{}", e),
-                            }
-                        }
-                    }
-                }
-            })
-        );
-
-        SMASHBROS_ENGINE().get_mut().registory_scene_event(
-            SceneList::Unknown,
-            SceneList::DecidedBgm,
-            Box::new(|smashbros_data| {
-                // BGM が確定していて, BGM が許可されていないなら、変わりの BGM を再生する
-                if !SMASHBROS_RESOURCE().get_mut().bgm_list.is_empty() {
-                    if smashbros_data.is_decided_bgm_name() {
-                        if let Some(is_playble) = SMASHBROS_RESOURCE().get_mut().bgm_list.get(&smashbros_data.get_bgm_name()) {
-                            if !*is_playble {
-                                SOUND_MANAGER().get_mut().play_bgm_random();
-                            }
-                        }
-                    }
-                }
-            })
-        );
-
-
-        let bgm_callback = Box::new(|_smashbros_data: &mut SmashbrosData| {
-            // もし BGM が再生中なら止める
-            if SOUND_MANAGER().get_mut().is_playing(Some(SoundType::Bgm)) {
-                SOUND_MANAGER().get_mut().stop(Some(SoundType::Bgm));
-            }
-        });
-        SMASHBROS_ENGINE().get_mut().registory_scene_event(SceneList::GamePlaying, SceneList::GameEnd, bgm_callback.clone());
-        SMASHBROS_ENGINE().get_mut().registory_scene_event(SceneList::GamePlaying, SceneList::ReadyToFight, bgm_callback.clone());
     }
 
     fn on_exit(&mut self) {
@@ -363,7 +348,6 @@ impl epi::App for GUI {
 
     fn update(&mut self, ctx: &egui::Context, frame: &epi::Frame) {
         self.update_battle_informations();
-        self.update_capture_mode();
         self.update_language(false);
         self.update_bgm();
         
@@ -689,7 +673,6 @@ impl Default for ConfigTab {
 // 設定
 struct WindowConfiguration {
     config_tab: ConfigTab,
-    capture_mode: CaptureMode,
 
     window_caption_list: Vec<String>,
     window_caption: String,
@@ -712,8 +695,6 @@ impl WindowConfiguration {
         // WASAPI のほうを先に初期化しないと rodio と競合するっぽい
         Self {
             config_tab: ConfigTab::Source,
-
-            capture_mode: CaptureMode::default(),
 
             window_caption_list: Vec::new(),
             window_caption: String::new(),
@@ -803,25 +784,6 @@ impl WindowConfiguration {
         )
     }
 
-    // キャプチャモードを設定する
-    pub fn set_capture_mode(&mut self, mode: CaptureMode) {
-        self.capture_mode = mode;
-    }
-
-    // キャプチャモードを取得する
-    pub fn get_captured_mode(&self) -> &CaptureMode {
-        &self.capture_mode
-    }
-
-    // デバイス名からデバイスIDを取得する
-    pub fn get_device_id(&self, device_name: String) -> Option<i32> {
-        if let Some(id) = self.video_device_list.iter().position(|name| name == &device_name) {
-            Some(id as i32)
-        } else {
-            None
-        }
-    }
-
     pub fn update_bgm(&mut self) {
         // 選択されているデバイスを取得
         let bgm_device_name = match GUI_CONFIG().get_mut().bgm_device_name.as_ref() {
@@ -876,21 +838,23 @@ impl WindowConfiguration {
             .max_col_width(ui.available_size().x - 5.0)
             .show(ui, |ui| {
                 egui::ComboBox::from_id_source(GUIIdList::SourceKind)
-                .selected_text(format!("{}", self.capture_mode))
+                .selected_text(format!("{}", GUI_CONFIG().get_mut().capture_mode))
                 .show_ui(ui, |ui| {
-                    if ui.add(egui::SelectableLabel::new( self.capture_mode.is_empty(), fl!(LANG_LOADER().get(), "empty") )).clicked() {
-                        self.capture_mode = CaptureMode::new_empty();
+                    if ui.add(egui::SelectableLabel::new( GUI_CONFIG().get_mut().capture_mode.is_empty(), fl!(LANG_LOADER().get(), "empty") )).clicked() {
+                        GUI_CONFIG().get_mut().capture_mode = CaptureMode::new_empty();
+                        GUI::change_capture_mode();
                     }
-                    if ui.add(egui::SelectableLabel::new( self.capture_mode.is_window(), fl!(LANG_LOADER().get(), "window") )).clicked() {
-                        self.capture_mode = CaptureMode::new_window(self.window_caption.clone());
+                    if ui.add(egui::SelectableLabel::new( GUI_CONFIG().get_mut().capture_mode.is_window(), fl!(LANG_LOADER().get(), "window") )).clicked() {
+                        GUI_CONFIG().get_mut().capture_mode = CaptureMode::new_window(self.window_caption.clone());
                         self.window_caption_list = CaptureFromWindow::get_window_list();
                     }
-                    if ui.add(egui::SelectableLabel::new( self.capture_mode.is_video_device(), fl!(LANG_LOADER().get(), "video_device") )).clicked() {
-                        self.capture_mode = CaptureMode::new_video_device(self.video_device_id);
+                    if ui.add(egui::SelectableLabel::new( GUI_CONFIG().get_mut().capture_mode.is_video_device(), fl!(LANG_LOADER().get(), "video_device") )).clicked() {
+                        GUI_CONFIG().get_mut().capture_mode = CaptureMode::new_video_device(self.video_device_id);
                         self.video_device_list = CaptureFromVideoDevice::get_device_list();
                     }
-                    if ui.add(egui::SelectableLabel::new( self.capture_mode.is_desktop(), fl!(LANG_LOADER().get(), "desktop") )).clicked() {
-                        self.capture_mode = CaptureMode::new_desktop();
+                    if ui.add(egui::SelectableLabel::new( GUI_CONFIG().get_mut().capture_mode.is_desktop(), fl!(LANG_LOADER().get(), "desktop") )).clicked() {
+                        GUI_CONFIG().get_mut().capture_mode = CaptureMode::new_desktop();
+                        GUI::change_capture_mode();
                     }
                 });
                 ui.end_row();
@@ -902,7 +866,7 @@ impl WindowConfiguration {
                     video_device_id,
                     ..
                 } = self;
-                match &mut self.capture_mode {
+                match &mut GUI_CONFIG().get_mut().capture_mode {
                     CaptureMode::Window(_, cm_window_caption) => {
                         egui::ComboBox::from_id_source(GUIIdList::WindowList)
                             .selected_text(Self::get_small_caption(cm_window_caption.clone(), 40))
@@ -912,6 +876,7 @@ impl WindowConfiguration {
                                     if ui.add(egui::SelectableLabel::new( wc == cm_window_caption, wc.as_str() )).clicked() {
                                         *cm_window_caption = wc.clone();
                                         *window_caption = wc.clone();
+                                        GUI::change_capture_mode();
                                     }
                                 }
                             });
@@ -927,6 +892,7 @@ impl WindowConfiguration {
                                     if ui.add(egui::SelectableLabel::new(*cm_device_id == id as i32, name)).clicked() {
                                         *cm_device_id = id as i32;
                                         *video_device_id = id as i32;
+                                        GUI::change_capture_mode();
                                     }
                                 }
                             });

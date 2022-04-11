@@ -76,9 +76,9 @@ impl CaptureBase {
         }
 
         // 微調整
-        if mat.cols() < own.content_area.width || mat.rows() < own.content_area.height {
+        let mut most_better_area = own.content_area.clone();
+        if own.content_area.width < mat.cols() || own.content_area.height < mat.rows() {
             let content_area = own.content_area.clone();
-            let mut most_better_area = own.content_area.clone();
             for y in [-1, 0, 1].iter() {
                 for x in [-1, 0, 1].iter() {
                     // 切り取る領域が画面外に出る場合は調整できない
@@ -88,8 +88,12 @@ impl CaptureBase {
     
                     own.content_area.x = content_area.x + x;
                     own.content_area.y = content_area.y + y;
-                    own.convert_mat(mat.clone())?;
+                    if own.convert_mat(mat.clone()).is_err() {
+                        continue;
+                    }
+
                     if let Ok((ratio, _)) = match_ready_to_fight(&own.prev_image) {
+                        log::debug!("{:?} : {:2.3}%", own.content_area, ratio);
                         if most_better_ratio < ratio {
                             most_better_ratio = ratio;
                             most_better_area = own.content_area.clone();
@@ -97,10 +101,10 @@ impl CaptureBase {
                     }
                 }
             }
-            own.content_area = most_better_area;
         }
 
         if 0.0 != most_better_ratio {
+            own.content_area = most_better_area;
             log::info!("match :{:?} {:3.3}%", own.content_area, most_better_ratio);
             Ok(own)
         } else {

@@ -9,12 +9,10 @@ use opencv::{
     prelude::*,
     videoio,
 };
-use serde::Serialize;
-use winapi::shared::minwindef::LPVOID;
-use winapi::shared::windef::*;
-use winapi::um::wingdi::*;
-use winapi::um::winnt::HANDLE;
-use winapi::um::winuser::*;
+use serde::{
+    Serialize,
+    Deserialize
+};
 
 use crate::resource::LANG_LOADER;
 use crate::scene::{
@@ -42,7 +40,7 @@ pub use from_window::CaptureFromWindow;
 
 
 // 検出する方法
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum CaptureMode {
     Empty(String),
     Desktop(String),

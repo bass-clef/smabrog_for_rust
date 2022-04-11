@@ -100,7 +100,7 @@ impl std::str::FromStr for PlayerGroup {
 /// Time   : 時間制限あり[2,2:30,3], ストック数は上限なしの昇順, HPはバースト毎に0%に初期化
 /// Stock  : 時間制限あり[3,4,5,6,7], ストック数は上限[1,2,3]の降順, HPはバースト毎に0%に初期化
 /// Stamina: 時間制限あり[3,4,5,6,7], ストック数は上限[1,2,3]の降順, HPは上限[100,150,200,250,300]の降順
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Eq, Hash, PartialEq)]
 pub enum BattleRule {
     Unknown, Time, Stock, Stamina, Tournament,
 }
