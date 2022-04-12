@@ -153,11 +153,12 @@ smabrog の Rust 移植/改変版です。
 - [Amazon ほしいも](https://www.amazon.jp/hz/wishlist/ls/1GT79HREJVH1C?ref_=wl_share)
 
 ## log
-- 2022/4/  
+- 2022/4/12  
     ver 0.33.0 を公開しました  
+    - 結果画面からストック(KO,Fall,SD)を検出するようにしました  
     - 検出が成功したソースを保存し次回起動時に自動で読み込むようにしました  
     - ルールの検出方法を改善しました  
-    - ReadyToFight のソースをより鮮明にしてブレを少なくしました  
+    - ReadyToFight のソースをより鮮明にして検出する際に誤差が生じていたのを修正しました  
 - 2022/4/7  
     ver 0.32.0 を公開しました  
     - Windows 11 と Windows Sanbbox での動作確認をしました  

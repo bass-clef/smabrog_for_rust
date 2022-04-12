@@ -1018,6 +1018,9 @@ impl WindowConfiguration {
                 egui::ComboBox::from_id_source(GUIIdList::BgmSessionComboBox)
                     .selected_text(Self::get_small_caption( now_session_name.clone(), 10 ))
                     .show_ui(ui, |ui| {
+                        if !self.bgm_device_list.contains_key(&now_device_name) {
+                            return;
+                        }
                         for (session_name, _) in &self.bgm_device_list[&now_device_name] {
                             if ui.add(egui::SelectableLabel::new(&now_session_name == session_name, session_name)).clicked() {
                                 GUI_CONFIG().get_mut().bgm_session_name = Some(session_name.clone());
